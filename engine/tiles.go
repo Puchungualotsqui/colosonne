@@ -44,7 +44,6 @@ const (
 	NoneStructure Structure = iota
 	Outpost
 	City
-	Caravan
 	Bridge
 	Watchtower
 	Road

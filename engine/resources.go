@@ -34,12 +34,6 @@ func StructureCost(structure Structure) (map[Resource]uint, error) {
 			Stone: 2,
 		}, nil
 
-	case Caravan:
-		return map[Resource]uint{
-			Wood:  2,
-			Grain: 2,
-		}, nil
-
 	default:
 		return nil, errors.New("structure has no cost")
 	}

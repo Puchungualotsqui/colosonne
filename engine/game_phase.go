@@ -57,16 +57,109 @@ func NewGameState(players []Player, rng *rand.Rand) *GameState {
 		Round:           1,
 	}
 
-	gs.RefillMarket(6)
+	gs.RefillMarket()
 	gs.beginPhase(PhasePick)
 	return gs
 }
 
-func (gs *GameState) RefillMarket(size int) {
-	for len(gs.Market) < size && len(gs.Deck) > 0 {
-		item := gs.Deck[0]
-		gs.Deck = gs.Deck[1:]
+func (gs *GameState) MarketSize() int {
+	return len(gs.Players) + 2
+}
+
+func (gs *GameState) RequiredTileCardsInMarket() int {
+	playerCount := len(gs.Players)
+
+	if playerCount == 0 {
+		return 0
+	}
+
+	if gs.Round <= 3 {
+		return playerCount
+	}
+
+	if playerCount <= 1 {
+		return 1
+	}
+
+	return playerCount - 1
+}
+
+func (gs *GameState) CountTileCardsInMarket() int {
+	count := 0
+
+	for _, item := range gs.Market {
+		if item.Kind == DraftTile {
+			count++
+		}
+	}
+
+	return count
+}
+
+func (gs *GameState) drawFirstTileFromDeck() (DraftItem, bool) {
+	for i, item := range gs.Deck {
+		if item.Kind == DraftTile {
+			gs.Deck = append(gs.Deck[:i], gs.Deck[i+1:]...)
+			return item, true
+		}
+	}
+
+	return DraftItem{}, false
+}
+
+func (gs *GameState) drawTopFromDeck() (DraftItem, bool) {
+	if len(gs.Deck) == 0 {
+		return DraftItem{}, false
+	}
+
+	item := gs.Deck[0]
+	gs.Deck = gs.Deck[1:]
+	return item, true
+}
+
+func (gs *GameState) RefillMarket() {
+	targetSize := gs.MarketSize()
+	requiredTiles := gs.RequiredTileCardsInMarket()
+
+	for len(gs.Market) < targetSize && gs.CountTileCardsInMarket() < requiredTiles {
+		item, ok := gs.drawFirstTileFromDeck()
+		if !ok {
+			break
+		}
+
 		gs.Market = append(gs.Market, item)
+	}
+
+	for len(gs.Market) < targetSize {
+		item, ok := gs.drawTopFromDeck()
+		if !ok {
+			break
+		}
+
+		gs.Market = append(gs.Market, item)
+	}
+
+	// If the top-deck refill accidentally still leaves too few tiles
+	// and there are tiles deeper in the deck, swap non-tiles out.
+	for gs.CountTileCardsInMarket() < requiredTiles {
+		tileItem, ok := gs.drawFirstTileFromDeck()
+		if !ok {
+			break
+		}
+
+		replaced := false
+		for i := len(gs.Market) - 1; i >= 0; i-- {
+			if gs.Market[i].Kind != DraftTile {
+				gs.Deck = append(gs.Deck, gs.Market[i])
+				gs.Market[i] = tileItem
+				replaced = true
+				break
+			}
+		}
+
+		if !replaced {
+			gs.Market = append(gs.Market, tileItem)
+		}
 	}
 }
 
@@ -199,7 +292,7 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 	gs.Players[playerIndex].Hand = &item
 
 	gs.Market = append(gs.Market[:marketIndex], gs.Market[marketIndex+1:]...)
-	gs.RefillMarket(6)
+	gs.RefillMarket()
 
 	gs.PhaseCompleted()
 	return nil

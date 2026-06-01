@@ -463,8 +463,6 @@ func describeStructure(s engine.Structure) string {
 		return "Outpost"
 	case engine.City:
 		return "City"
-	case engine.Caravan:
-		return "Caravan"
 	case engine.Bridge:
 		return "Bridge"
 	case engine.Watchtower:

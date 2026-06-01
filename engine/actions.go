@@ -189,3 +189,18 @@ func (gs *GameState) HasAdjacentActiveCityOwnedBy(playerId PlayerId, x, y int) b
 
 	return false
 }
+
+func (gs *GameState) HasAdjacentOwnedTile(playerId PlayerId, x, y int) bool {
+	for _, n := range HexNeighbors(x, y) {
+		tile := gs.TileAt(n[0], n[1])
+		if tile == nil {
+			continue
+		}
+
+		if tile.HasOwner && tile.Owner == playerId {
+			return true
+		}
+	}
+
+	return false
+}

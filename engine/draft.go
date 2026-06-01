@@ -75,7 +75,7 @@ func GenerateDraftDeck() []DraftItem {
 
 	addUpgrade(10)
 
-	addStructure(Bridge, 6)
+	addStructure(Bridge, 5)
 	addStructure(Watchtower, 6)
 	addStructure(Road, 6)
 
@@ -161,14 +161,11 @@ func (gs *GameState) actionExpansion(playerId PlayerId) error {
 
 	return nil
 }
+
 func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x, y int) error {
 	tile := gs.TileAt(x, y)
 	if tile == nil {
 		return errors.New("tile not found")
-	}
-
-	if tile.Biome == River {
-		return errors.New("cannot build structures on river tiles")
 	}
 
 	if tile.Structure != NoneStructure {
@@ -176,7 +173,26 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 	}
 
 	switch structure {
-	case Road, Bridge, Watchtower, Caravan:
+	case Bridge:
+		if tile.Biome != River {
+			return errors.New("bridge can only be built on river tiles")
+		}
+
+		// For MVP, Bridge may be placed on an unowned river if adjacent to player territory.
+		// This makes it usable despite rivers being unownable/resource-less.
+		if !gs.HasAdjacentOwnedTile(playerId, x, y) {
+			return errors.New("bridge must be adjacent to a tile you control")
+		}
+
+		tile.Structure = Bridge
+		tile.StructureOwner = playerId
+		return nil
+
+	case Road, Watchtower:
+		if tile.Biome == River {
+			return errors.New("only bridges can be built on river tiles")
+		}
+
 		if !gs.playerControlsTile(playerId, tile) {
 			return errors.New("player does not control this tile")
 		}
@@ -186,7 +202,10 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 		return nil
 
 	case Outpost:
-		// If you later add Outpost as a draft item, allow it on unowned/self-owned tiles.
+		if tile.Biome == River {
+			return errors.New("cannot build outpost on river tiles")
+		}
+
 		if tile.HasOwner && tile.Owner != playerId {
 			return errors.New("cannot build outpost on enemy controlled tile")
 		}

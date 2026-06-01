@@ -3,7 +3,7 @@ package engine
 func (gs *GameState) ResolveInfluence() {
 	gs.clearInfluence()
 	gs.applyStructureInfluence()
-	gs.applyStructureInfluence()
+	gs.applyTempInfluence()
 	gs.resolveTileOwners()
 	gs.produceResources()
 	gs.clearTempInfluence()
@@ -85,14 +85,15 @@ func (gs *GameState) applyStructureInfluence() {
 		case Bridge:
 			gs.addInfluence(tile.X, tile.Y, owner, 1+upgradeBonus)
 
-			// Bridges are intentionally light for now.
-			// Later, you can make them interact specially with river tiles.
-
-		case Caravan:
-			gs.addInfluence(tile.X, tile.Y, owner, 1+upgradeBonus)
-
 			for _, n := range HexNeighbors(tile.X, tile.Y) {
-				gs.addInfluence(n[0], n[1], owner, 1)
+				neighbor := gs.TileAt(n[0], n[1])
+				if neighbor == nil {
+					continue
+				}
+
+				if neighbor.Biome != River {
+					gs.addInfluence(n[0], n[1], owner, 1)
+				}
 			}
 		}
 	}
