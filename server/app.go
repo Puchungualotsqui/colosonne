@@ -27,6 +27,7 @@ func NewApp(config Config) (*App, error) {
 	}
 
 	app.WS = &WebSocketServer{
+		App:   app,
 		Rooms: rooms,
 	}
 
@@ -43,7 +44,6 @@ func (a *App) Routes() http.Handler {
 
 	mux.HandleFunc("/ws", a.WS.HandleWS)
 
-	// Auth endpoints to implement next.
 	mux.HandleFunc("/auth/guest", a.HandleGuestLogin)
 	mux.HandleFunc("/auth/google/start", a.HandleGoogleStart)
 	mux.HandleFunc("/auth/google/callback", a.HandleGoogleCallback)

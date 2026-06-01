@@ -36,3 +36,9 @@ type BuildPayload struct {
 	X      int    `json:"x"`
 	Y      int    `json:"y"`
 }
+
+func decodeData[T any](raw json.RawMessage) (T, error) {
+	var payload T
+	err := json.Unmarshal(raw, &payload)
+	return payload, err
+}

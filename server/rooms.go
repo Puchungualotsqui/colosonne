@@ -1,15 +1,14 @@
 package server
 
 import (
-	"encoding/json"
 	"errors"
 	"math/rand"
 	"sync"
 	"time"
 
-	"webGameGo/engine"
-
 	"github.com/google/uuid"
+
+	"webGameGo/engine"
 )
 
 type Client struct {
@@ -18,6 +17,7 @@ type Client struct {
 	PlayerID engine.PlayerId
 	UserID   *int64
 	Name     string
+	IsGuest  bool
 	Send     chan ServerMessage
 }
 
@@ -96,35 +96,46 @@ func (r *Room) AddClient(c *Client) error {
 			{Id: 2},
 		}
 
-		// Use deterministic seed only for now. Later use crypto/rand or time.
-		r.Game = engine.NewGameState(players, randSource())
+		r.Game = engine.NewGameState(players, rand.New(rand.NewSource(time.Now().UnixNano())))
 	}
 
 	return nil
 }
 
-func randSource() *rand.Rand {
-	return rand.New(rand.NewSource(time.Now().UnixNano()))
+func (r *Room) RemoveClient(playerID engine.PlayerId) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	delete(r.Clients, playerID)
 }
 
 func (r *Room) Broadcast(msg ServerMessage) {
-	for _, client := range r.Clients {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for playerID, client := range r.Clients {
 		select {
 		case client.Send <- msg:
 		default:
 			close(client.Send)
-			delete(r.Clients, client.PlayerID)
+			delete(r.Clients, playerID)
 		}
 	}
 }
 
 func (r *Room) BroadcastState() {
-	if r.Game == nil {
+	r.mu.Lock()
+	game := r.Game
+	roomID := r.ID
+	playerCount := len(r.Clients)
+	r.mu.Unlock()
+
+	if game == nil {
 		r.Broadcast(ServerMessage{
 			Type: "room_waiting",
 			Data: map[string]any{
-				"roomId":  r.ID,
-				"players": len(r.Clients),
+				"roomId":  roomID,
+				"players": playerCount,
 			},
 		})
 		return
@@ -132,12 +143,9 @@ func (r *Room) BroadcastState() {
 
 	r.Broadcast(ServerMessage{
 		Type: "state",
-		Data: r.Game,
+		Data: map[string]any{
+			"roomId": roomID,
+			"game":   game,
+		},
 	})
-}
-
-func decodeData[T any](raw json.RawMessage) (T, error) {
-	var payload T
-	err := json.Unmarshal(raw, &payload)
-	return payload, err
 }

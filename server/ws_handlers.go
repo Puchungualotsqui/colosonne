@@ -16,8 +16,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		c.Send <- ServerMessage{
 			Type: "room_created",
 			Data: map[string]any{
-				"roomId": room.ID,
+				"roomId":   room.ID,
 				"playerId": c.PlayerID,
+				"name":     c.Name,
+				"isGuest":  c.IsGuest,
 			},
 		}
 
@@ -46,8 +48,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		c.Send <- ServerMessage{
 			Type: "room_joined",
 			Data: map[string]any{
-				"roomId": room.ID,
+				"roomId":   room.ID,
 				"playerId": c.PlayerID,
+				"name":     c.Name,
+				"isGuest":  c.IsGuest,
 			},
 		}
 
@@ -149,6 +153,7 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		}
 
 		room.mu.Lock()
+
 		switch payload.Action {
 		case "outpost":
 			err = room.Game.BuildOutpost(c.PlayerID, payload.X, payload.Y)
@@ -159,6 +164,7 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		default:
 			err = errors.New("unknown build action")
 		}
+
 		room.mu.Unlock()
 
 		if err != nil {

@@ -8,12 +8,14 @@ import (
 )
 
 type WebSocketServer struct {
+	App   *App
 	Rooms *RoomManager
 }
 
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		// In production, restrict this to your domain.
+		// For development.
+		// In production, restrict to your frontend domain.
 		return true
 	},
 }
@@ -26,9 +28,20 @@ func (s *WebSocketServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
-		Conn: conn,
-		Name: "Guest",
-		Send: make(chan ServerMessage, 32),
+		Conn:    conn,
+		Name:    "Guest",
+		IsGuest: true,
+		Send:    make(chan ServerMessage, 32),
+	}
+
+	session, err := s.App.currentSession(r)
+	if err == nil {
+		me, err := s.App.meFromSession(session)
+		if err == nil {
+			client.Name = me.DisplayName
+			client.UserID = me.UserID
+			client.IsGuest = me.IsGuest
+		}
 	}
 
 	go writePump(client)
@@ -46,7 +59,17 @@ func writePump(c *Client) {
 }
 
 func readPump(s *WebSocketServer, c *Client) {
-	defer c.Conn.Close()
+	defer func() {
+		if c.RoomID != "" && c.PlayerID != 0 {
+			if room, ok := s.Rooms.GetRoom(c.RoomID); ok {
+				room.RemoveClient(c.PlayerID)
+				room.BroadcastState()
+			}
+		}
+
+		close(c.Send)
+		_ = c.Conn.Close()
+	}()
 
 	for {
 		_, raw, err := c.Conn.ReadMessage()

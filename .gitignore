@@ -1,0 +1,59 @@
+# Go build artifacts
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+
+# Go workspace / vendoring
+go.work
+vendor/
+
+# Local database files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vite / Svelte client
+client/node_modules/
+client/dist/
+client/.svelte-kit/
+client/.vite/
+client/.env
+client/.env.*
+!client/.env.example
+
+# NPM logs
+client/npm-debug.log*
+client/yarn-debug.log*
+client/yarn-error.log*
+client/pnpm-debug.log*
+
+# Temporary files
+tmp/
+temp/
+.cache/
+
