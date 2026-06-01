@@ -86,6 +86,14 @@ func (gs *GameState) PlaceTile(playerId PlayerId, x, y int) error {
 	tile.X = x
 	tile.Y = y
 
+	// Plain rule:
+	// If a player places a Plain adjacent to their active City,
+	// that Plain is immediately owned by that player.
+	if tile.Biome == Plain && gs.HasAdjacentActiveCityOwnedBy(playerId, x, y) {
+		tile.HasOwner = true
+		tile.Owner = playerId
+	}
+
 	gs.Map = append(gs.Map, tile)
 
 	player.Hand = nil
@@ -163,4 +171,21 @@ func (gs *GameState) PassPlace(playerId PlayerId) error {
 
 	gs.PhaseCompleted()
 	return nil
+}
+
+func (gs *GameState) HasAdjacentActiveCityOwnedBy(playerId PlayerId, x, y int) bool {
+	for _, n := range HexNeighbors(x, y) {
+		tile := gs.TileAt(n[0], n[1])
+		if tile == nil {
+			continue
+		}
+
+		if tile.Structure == City &&
+			tile.StructureOwner == playerId &&
+			gs.StructureActive(tile) {
+			return true
+		}
+	}
+
+	return false
 }

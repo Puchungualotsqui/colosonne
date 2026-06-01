@@ -167,13 +167,16 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 		return errors.New("tile not found")
 	}
 
+	if tile.Biome == River {
+		return errors.New("cannot build structures on river tiles")
+	}
+
 	if tile.Structure != NoneStructure {
 		return errors.New("tile already has a structure")
 	}
 
 	switch structure {
 	case Road, Bridge, Watchtower, Caravan:
-		// Draft infrastructure requires control.
 		if !gs.playerControlsTile(playerId, tile) {
 			return errors.New("player does not control this tile")
 		}
@@ -204,6 +207,10 @@ func (gs *GameState) useDraftUpgrade(playerId PlayerId, x, y int) error {
 	tile := gs.TileAt(x, y)
 	if tile == nil {
 		return errors.New("tile not found")
+	}
+
+	if tile.Biome == River {
+		return errors.New("cannot upgrade on river tiles")
 	}
 
 	if !gs.playerControlsTile(playerId, tile) {

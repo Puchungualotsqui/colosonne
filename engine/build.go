@@ -16,6 +16,10 @@ func (gs *GameState) BuildOutpost(playerId PlayerId, x, y int) error {
 		return errors.New("tile not found")
 	}
 
+	if tile.Biome == River {
+		return errors.New("cannot build structures on river tiles")
+	}
+
 	if tile.Structure != NoneStructure {
 		return errors.New("tile already has a structure")
 	}
@@ -54,6 +58,10 @@ func (gs *GameState) UpgradeCity(playerId PlayerId, x, y int) error {
 	tile := gs.TileAt(x, y)
 	if tile == nil {
 		return errors.New("tile not found")
+	}
+
+	if tile.Biome != Plain {
+		return errors.New("cities can only be built on plain tiles")
 	}
 
 	if tile.Structure != Outpost || tile.StructureOwner != playerId {

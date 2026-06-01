@@ -51,6 +51,12 @@ func (gs *GameState) applyStructureInfluence() {
 				gs.addInfluence(n[0], n[1], owner, 1)
 			}
 
+			if tile.Biome == Forest {
+				for _, n := range HexRingRadius2(tile.X, tile.Y) {
+					gs.addInfluence(n[0], n[1], owner, 1)
+				}
+			}
+
 		case City:
 			gs.addInfluence(tile.X, tile.Y, owner, 5+upgradeBonus)
 
@@ -170,6 +176,14 @@ func (gs *GameState) produceResources() {
 		}
 
 		amount := uint(1 + tile.UpgradeLevel)
+
+		// Mountain rule:
+		// If an owned Mountain belongs to a connected owned Mountain group of size 2+,
+		// it produces +1 Stone.
+		if tile.Biome == Mountain && gs.ConnectedOwnedMountainGroupSize(tile.X, tile.Y, tile.Owner) >= 2 {
+			amount += 1
+		}
+
 		_ = gs.AddResource(tile.Owner, resource, amount)
 	}
 }
@@ -206,4 +220,55 @@ func (gs *GameState) clearTempInfluence() {
 	for i := range gs.Map {
 		gs.Map[i].TempInfluence = make(map[PlayerId]uint)
 	}
+}
+
+func (gs *GameState) ConnectedOwnedMountainGroupSize(x, y int, owner PlayerId) int {
+	start := gs.TileAt(x, y)
+	if start == nil {
+		return 0
+	}
+
+	if start.Biome != Mountain || !start.HasOwner || start.Owner != owner {
+		return 0
+	}
+
+	type coord struct {
+		x int
+		y int
+	}
+
+	visited := make(map[coord]bool)
+	stack := []coord{{x: x, y: y}}
+	size := 0
+
+	for len(stack) > 0 {
+		current := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		if visited[current] {
+			continue
+		}
+
+		visited[current] = true
+
+		tile := gs.TileAt(current.x, current.y)
+		if tile == nil {
+			continue
+		}
+
+		if tile.Biome != Mountain || !tile.HasOwner || tile.Owner != owner {
+			continue
+		}
+
+		size++
+
+		for _, n := range HexNeighbors(current.x, current.y) {
+			next := coord{x: n[0], y: n[1]}
+			if !visited[next] {
+				stack = append(stack, next)
+			}
+		}
+	}
+
+	return size
 }
