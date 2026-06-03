@@ -1,25 +1,44 @@
 <script lang="ts">
-  let title = 'Frontiers'
+    import Landing, { type LandingUser } from "./components/Landing.svelte";
+
+    let loading = false;
+    let error = "";
+
+    let user: LandingUser = null;
+
+    function createRoom() {
+        loading = true;
+        error = "";
+        console.log("create room");
+        setTimeout(() => {
+            loading = false;
+        }, 500);
+    }
+
+    function joinRoom(roomId: string) {
+        console.log("join room", roomId);
+    }
+
+    function spectateRoom(roomId: string) {
+        console.log("spectate room", roomId);
+    }
+
+    function login() {
+        console.log("login");
+    }
+
+    function signUp() {
+        console.log("sign up");
+    }
 </script>
 
-<main class="min-h-screen bg-slate-950 text-slate-100">
-  <section class="mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center gap-6 px-6">
-    <div class="rounded-3xl border border-slate-700 bg-slate-900/80 p-8 shadow-2xl">
-      <p class="mb-2 text-sm uppercase tracking-[0.3em] text-emerald-400">
-        Web strategy game
-      </p>
-
-      <h1 class="text-5xl font-bold tracking-tight">
-        {title}
-      </h1>
-
-      <p class="mt-4 max-w-xl text-slate-300">
-        A browser board game about territory, influence, rivers, cities, and frontier expansion.
-      </p>
-
-      <button class="mt-6 rounded-2xl bg-emerald-500 px-5 py-3 font-semibold text-slate-950 hover:bg-emerald-400">
-        Create room
-      </button>
-    </div>
-  </section>
-</main>
+<Landing
+    {user}
+    {loading}
+    {error}
+    onCreateRoom={createRoom}
+    onJoinRoom={joinRoom}
+    onSpectateRoom={spectateRoom}
+    onLogin={login}
+    onSignUp={signUp}
+/>
