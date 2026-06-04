@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS users (
     display_name TEXT NOT NULL,
     avatar_url TEXT,
     karma INTEGER NOT NULL DEFAULT 100,
+    is_guest BOOLEAN NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_seen_at DATETIME
 );
@@ -80,7 +81,12 @@ CREATE TABLE IF NOT EXISTS game_players (
     FOREIGN KEY(user_id) REFERENCES users(id)
 );
 `
-	_, err := db.Exec(schema)
-	return err
-}
+	if _, err := db.Exec(schema); err != nil {
+		return err
+	}
 
+	// For existing local DBs created before is_guest existed.
+	_, _ = db.Exec(`ALTER TABLE users ADD COLUMN is_guest BOOLEAN NOT NULL DEFAULT 0`)
+
+	return nil
+}

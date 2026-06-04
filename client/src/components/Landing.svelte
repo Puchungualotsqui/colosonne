@@ -1,4 +1,4 @@
-<script lang="ts">
+<script lang="ts" context="module">
     export type LandingUser = {
         authenticated: boolean;
         isGuest: boolean;
@@ -6,7 +6,9 @@
         avatarUrl?: string;
         karma: number;
     } | null;
+</script>
 
+<script lang="ts">
     export let user: LandingUser = null;
     export let loading = false;
     export let error = "";
@@ -21,23 +23,23 @@
     let roomCode = "";
 
     const previewTiles = [
-        { b: "mountain", icon: "⛰️", x: 82, y: 0 },
-        { b: "plain", icon: "🌾", x: 200, y: 0 },
-        { b: "forest", icon: "🌲", x: 318, y: 0 },
+        { b: "mountain", x: 82, y: 0, structure: "watchtower", owner: "blue" },
+        { b: "plain", x: 200, y: 0, structure: "city", owner: "red" },
+        { b: "forest", x: 318, y: 0 },
 
-        { b: "plain", icon: "🌾", x: 23, y: 88 },
-        { b: "forest", icon: "🌲", x: 141, y: 88 },
-        { b: "river", icon: "💧", x: 259, y: 88 },
-        { b: "mountain", icon: "⛰️", x: 377, y: 88 },
+        { b: "plain", x: 23, y: 88, structure: "outpost", owner: "blue" },
+        { b: "forest", x: 141, y: 88 },
+        { b: "river", x: 259, y: 88, structure: "bridge", owner: "red" },
+        { b: "mountain", x: 377, y: 88 },
 
-        { b: "forest", icon: "🌲", x: 82, y: 176 },
-        { b: "plain", icon: "🌾", x: 200, y: 176 },
-        { b: "mountain", icon: "⛰️", x: 318, y: 176 },
+        { b: "forest", x: 82, y: 176 },
+        { b: "plain", x: 200, y: 176, structure: "road", owner: "blue" },
+        { b: "mountain", x: 318, y: 176, structure: "outpost", owner: "red" },
 
-        { b: "river", icon: "💧", x: 23, y: 264 },
-        { b: "plain", icon: "🌾", x: 141, y: 264 },
-        { b: "forest", icon: "🌲", x: 259, y: 264 },
-        { b: "plain", icon: "🌾", x: 377, y: 264 },
+        { b: "river", x: 23, y: 264 },
+        { b: "plain", x: 141, y: 264, structure: "city", owner: "blue" },
+        { b: "forest", x: 259, y: 264, structure: "watchtower", owner: "red" },
+        { b: "plain", x: 377, y: 264, structure: "road", owner: "red" },
     ];
 
     function join() {
@@ -54,27 +56,19 @@
 </script>
 
 <main
-    class="relative min-h-screen overflow-hidden bg-[#0e2430] font-sans text-[#f8efe0]"
+    class="relative min-h-screen overflow-hidden bg-[#17313a] font-sans text-[#f8efe0]"
 >
-    <!-- Background -->
-    <div class="pointer-events-none absolute inset-0">
-        <div
-            class="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(217,160,91,0.18),transparent_32%),radial-gradient(circle_at_80%_10%,rgba(99,179,177,0.16),transparent_30%),linear-gradient(135deg,#102b38_0%,#0b1d27_52%,#132f32_100%)]"
-        ></div>
+    <div class="pointer-events-none absolute inset-0 bg-[#15323a]">
+        <div class="absolute inset-0 bg-board-flat"></div>
+        <div class="absolute inset-0 bg-board-texture opacity-[0.16]"></div>
 
-        <div class="absolute inset-0 opacity-[0.055]">
-            <div class="map-grid h-full w-full"></div>
-        </div>
+        <div class="absolute inset-x-0 top-0 h-px bg-white/10"></div>
 
         <div
-            class="absolute -left-24 top-20 h-72 w-72 rounded-full bg-[#d9a05b]/20 blur-3xl"
-        ></div>
-        <div
-            class="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-[#4fb4ae]/15 blur-3xl"
+            class="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/18 to-transparent"
         ></div>
     </div>
 
-    <!-- Header -->
     <header
         class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-12"
     >
@@ -82,7 +76,7 @@
             <div
                 class="grid h-11 w-11 place-items-center rounded-2xl bg-[#f2c36b] text-xl font-black text-[#142833] shadow-[0_8px_0_rgba(0,0,0,0.16)] ring-1 ring-white/20"
             >
-                ◈
+                <span class="logo-diamond">◈</span>
             </div>
 
             <div>
@@ -94,7 +88,7 @@
                 <div
                     class="text-xs font-semibold uppercase tracking-[0.22em] text-[#9fc9c5]"
                 >
-                    Tactical Map Game
+                    Influence Strategy
                 </div>
             </div>
         </div>
@@ -147,101 +141,114 @@
         </div>
     </header>
 
-    <!-- Hero -->
     <section
         class="relative z-10 mx-auto grid min-h-[calc(100vh-84px)] max-w-7xl grid-cols-1 items-center gap-10 px-6 pb-12 lg:grid-cols-[1.05fr_0.95fr] lg:px-12"
     >
-        <!-- Board preview -->
         <div class="flex justify-center lg:justify-start">
-            <div class="relative h-[455px] w-[610px] max-w-full">
+            <div class="relative h-[520px] w-[700px] max-w-full">
                 <div
-                    class="absolute inset-0 rounded-[48px] bg-[#f2c36b]/15 blur-3xl"
+                    class="absolute inset-x-3 top-4 bottom-4 rounded-[34px] bg-[#caa66d] shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
                 ></div>
 
                 <div
-                    class="absolute left-1/2 top-1/2 h-[390px] w-[555px] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg] rounded-[34px] bg-[#d8b985] shadow-2xl ring-1 ring-black/20"
+                    class="absolute inset-x-8 top-9 bottom-9 rounded-[26px] border border-[#6b4a2f]/35 bg-[#ead7aa] shadow-inner"
                 ></div>
 
                 <div
-                    class="absolute left-1/2 top-1/2 h-[360px] w-[525px] -translate-x-1/2 -translate-y-1/2 rotate-[-2deg] rounded-[28px] border border-[#5d4128]/25 bg-[#efe0bd] shadow-inner"
+                    class="absolute left-1/2 top-1/2 h-[430px] w-[560px] -translate-x-1/2 -translate-y-1/2"
                 >
-                    <div
-                        class="absolute inset-0 rounded-[28px] opacity-25 map-paper"
-                    ></div>
-                </div>
-
-                <div class="relative mx-auto h-[420px] w-[560px] translate-y-8">
                     {#each previewTiles as tile}
-                        <!-- small underlay removes visual gaps and gives tile depth -->
                         <div
-                            class="clip-hex absolute h-[120px] w-[138px] bg-[#5b3b22]/45 shadow-lg"
-                            style={`left: ${tile.x - 7}px; top: ${tile.y - 5}px;`}
+                            class="clip-hex absolute h-[120px] w-[138px] bg-[#5b3b22]/40"
+                            style={`left: ${tile.x - 7}px; top: ${tile.y + 28}px;`}
                         ></div>
 
                         <div
                             class={[
-                                "clip-hex absolute flex h-[108px] w-[124px] items-center justify-center border-[2px] shadow-[0_10px_0_rgba(74,48,31,0.22),0_18px_28px_rgba(30,23,15,0.20)]",
+                                "clip-hex absolute flex h-[108px] w-[124px] items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.25)]",
                                 tile.b === "forest"
-                                    ? "border-[#28583f] bg-[#4f8f5f]"
+                                    ? "border-[#2f6546] bg-[#5b9368]"
                                     : "",
                                 tile.b === "mountain"
-                                    ? "border-[#5a6170] bg-[#a8afb8]"
+                                    ? "border-[#656b73] bg-[#a8adb2]"
                                     : "",
                                 tile.b === "plain"
-                                    ? "border-[#9b7034] bg-[#ddb769]"
+                                    ? "border-[#9b7034] bg-[#d9b56a]"
                                     : "",
                                 tile.b === "river"
-                                    ? "border-[#2d7286] bg-[#65b7c7]"
+                                    ? "border-[#327b8d] bg-[#6eb8c5]"
                                     : "",
                             ].join(" ")}
-                            style={`left: ${tile.x}px; top: ${tile.y}px;`}
+                            style={`left: ${tile.x}px; top: ${tile.y + 33}px;`}
                         >
                             <div
-                                class="pointer-events-none absolute inset-[5px] clip-hex border border-white/30"
-                            ></div>
-                            <div
-                                class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(255,255,255,0.26),transparent_34%)]"
+                                class="pointer-events-none absolute inset-[5px] clip-hex border border-white/25"
                             ></div>
 
-                            <div class="grid h-full w-full place-items-center">
-                                <div class="text-4xl drop-shadow-sm">
-                                    {tile.icon}
+                            {#if tile.structure}
+                                <div
+                                    class="relative z-10 grid h-full w-full place-items-center"
+                                >
+                                    <div
+                                        class={[
+                                            "structure",
+                                            tile.owner === "blue"
+                                                ? "structure-blue"
+                                                : "structure-red",
+                                        ].join(" ")}
+                                    >
+                                        {#if tile.structure === "outpost"}
+                                            <div class="outpost-roof"></div>
+                                            <div class="outpost-body"></div>
+                                            <div class="outpost-flag"></div>
+                                        {:else if tile.structure === "city"}
+                                            <div
+                                                class="city-block city-block-a"
+                                            ></div>
+                                            <div
+                                                class="city-block city-block-b"
+                                            ></div>
+                                            <div
+                                                class="city-block city-block-c"
+                                            ></div>
+                                        {:else if tile.structure === "road"}
+                                            <div class="road-line"></div>
+                                            <div
+                                                class="road-node road-node-a"
+                                            ></div>
+                                            <div
+                                                class="road-node road-node-b"
+                                            ></div>
+                                        {:else if tile.structure === "bridge"}
+                                            <div class="bridge-deck"></div>
+                                            <div
+                                                class="bridge-arch bridge-arch-a"
+                                            ></div>
+                                            <div
+                                                class="bridge-arch bridge-arch-b"
+                                            ></div>
+                                        {:else if tile.structure === "watchtower"}
+                                            <div class="tower-top"></div>
+                                            <div class="tower-body"></div>
+                                            <div class="tower-legs"></div>
+                                        {/if}
+                                    </div>
                                 </div>
-                            </div>
-
-                            <!-- Fixed coordinates -->
-                            {#if tile.x === 200 && tile.y === 176}
-                                <div
-                                    class="absolute -bottom-2 left-1/2 h-11 w-9 -translate-x-1/2 rounded-t-full bg-[#1d4e89] shadow-lg ring-2 ring-[#fff7e8]"
-                                ></div>
-                            {/if}
-
-                            {#if tile.x === 259 && tile.y === 264}
-                                <div
-                                    class="absolute -bottom-2 left-1/2 h-11 w-9 -translate-x-1/2 rounded-t-full bg-[#b94b3f] shadow-lg ring-2 ring-[#fff7e8]"
-                                ></div>
                             {/if}
                         </div>
                     {/each}
                 </div>
-
-                <div
-                    class="absolute bottom-3 left-10 rounded-full bg-[#0e2430]/80 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-[#f2c36b] ring-1 ring-[#f2c36b]/30 backdrop-blur"
-                >
-                    Live map preview
-                </div>
             </div>
         </div>
 
-        <!-- Text / controls -->
         <div class="mx-auto w-full max-w-xl text-center lg:text-left">
             <div
-                class="mb-6 inline-flex items-center gap-3 rounded-2xl bg-[#f8efe0]/10 px-5 py-3 shadow-lg ring-1 ring-[#f8efe0]/15 backdrop-blur"
+                class="mb-6 inline-flex items-center gap-3 rounded-2xl bg-[#23444c] px-5 py-3 shadow-md ring-1 ring-[#f8efe0]/10"
             >
                 <div
                     class="grid h-12 w-12 place-items-center rounded-xl bg-[#f2c36b] text-2xl font-black text-[#142833] shadow-md"
                 >
-                    ◈
+                    <span class="logo-diamond">◈</span>
                 </div>
 
                 <div>
@@ -261,16 +268,17 @@
             <h1
                 class="text-5xl font-semibold leading-tight tracking-tight text-[#fff7e8] sm:text-6xl"
             >
-                Command the map.
+                Expand influence.
                 <br />
-                Claim the edge.
+                Control the frontier.
             </h1>
 
             <p
                 class="mt-5 max-w-lg text-lg leading-8 text-[#d9e6df] lg:max-w-none"
             >
-                A fast browser strategy game about routes, settlements, rivers,
-                resources, and pressure across a changing frontier.
+                A dice-free multiplayer strategy game about drafting, placing
+                hexes, building outposts, upgrading cities, crossing rivers, and
+                winning territory through influence.
             </p>
 
             <div class="mt-8 grid gap-4 sm:grid-cols-2">
@@ -295,7 +303,7 @@
 
             {#if joinOpen}
                 <div
-                    class="mt-5 rounded-3xl bg-[#f8efe0]/10 p-4 shadow-xl ring-1 ring-[#f8efe0]/15 backdrop-blur"
+                    class="mt-5 rounded-3xl bg-[#23444c] p-4 shadow-md ring-1 ring-[#f8efe0]/10"
                 >
                     <label
                         for="room-code"
@@ -348,9 +356,9 @@
             <div
                 class="mt-8 flex flex-wrap justify-center gap-5 text-sm font-semibold text-[#b9d5d1] lg:justify-start"
             >
-                <span>👥 2 players + spectators</span>
+                <span>👥 2+ players</span>
                 <span>🧭 20–30 min matches</span>
-                <span>🗺️ Fresh tactical maps</span>
+                <span>🏛 Cities, roads, bridges</span>
             </div>
         </div>
     </section>
@@ -368,37 +376,198 @@
         );
     }
 
-    .map-grid {
-        background-image:
-            linear-gradient(rgba(255, 255, 255, 0.18) 1px, transparent 1px),
-            linear-gradient(
-                90deg,
-                rgba(255, 255, 255, 0.18) 1px,
-                transparent 1px
-            );
-        background-size: 72px 72px;
+    .logo-diamond {
+        display: block;
+        line-height: 1;
+        transform: translateY(-1px);
     }
 
-    .map-paper {
-        background-image:
-            radial-gradient(
-                circle at 20% 30%,
-                rgba(91, 65, 40, 0.22) 0 1px,
-                transparent 2px
-            ),
-            radial-gradient(
-                circle at 80% 40%,
-                rgba(91, 65, 40, 0.18) 0 1px,
-                transparent 2px
-            ),
-            radial-gradient(
-                circle at 45% 70%,
-                rgba(91, 65, 40, 0.16) 0 1px,
-                transparent 2px
-            );
-        background-size:
-            42px 42px,
-            58px 58px,
-            70px 70px;
+    .structure {
+        position: relative;
+        width: 62px;
+        height: 58px;
+        filter: drop-shadow(0 5px 3px rgba(43, 29, 18, 0.38));
+    }
+
+    .structure-blue {
+        --player-main: #1d4e89;
+        --player-dark: #12385f;
+        --player-light: #8fc7ff;
+    }
+
+    .structure-red {
+        --player-main: #b94b3f;
+        --player-dark: #7d2d27;
+        --player-light: #ffc1aa;
+    }
+
+    /* Outpost */
+    .outpost-roof {
+        position: absolute;
+        left: 11px;
+        top: 8px;
+        width: 40px;
+        height: 24px;
+        background: var(--player-main);
+        clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+        border: 2px solid var(--player-dark);
+    }
+
+    .outpost-body {
+        position: absolute;
+        left: 18px;
+        top: 29px;
+        width: 26px;
+        height: 20px;
+        border-radius: 4px;
+        background: #f8efe0;
+        border: 2px solid var(--player-dark);
+    }
+
+    .outpost-flag {
+        position: absolute;
+        left: 38px;
+        top: 5px;
+        width: 14px;
+        height: 10px;
+        background: var(--player-light);
+        clip-path: polygon(0 0, 100% 20%, 0 100%);
+    }
+
+    /* City */
+    .city-block {
+        position: absolute;
+        bottom: 8px;
+        background: var(--player-main);
+        border: 2px solid var(--player-dark);
+        border-radius: 4px 4px 2px 2px;
+    }
+
+    .city-block-a {
+        left: 7px;
+        width: 18px;
+        height: 27px;
+    }
+
+    .city-block-b {
+        left: 23px;
+        width: 20px;
+        height: 40px;
+        background: var(--player-light);
+    }
+
+    .city-block-c {
+        left: 41px;
+        width: 15px;
+        height: 31px;
+    }
+
+    /* Road */
+    .road-line {
+        position: absolute;
+        left: 5px;
+        top: 27px;
+        width: 53px;
+        height: 10px;
+        transform: rotate(-24deg);
+        border-radius: 999px;
+        background: var(--player-dark);
+        box-shadow: inset 0 0 0 3px var(--player-main);
+    }
+
+    .road-node {
+        position: absolute;
+        width: 15px;
+        height: 15px;
+        border-radius: 999px;
+        background: #f8efe0;
+        border: 3px solid var(--player-dark);
+    }
+
+    .road-node-a {
+        left: 4px;
+        top: 35px;
+    }
+
+    .road-node-b {
+        right: 5px;
+        top: 12px;
+    }
+
+    /* Bridge */
+    .bridge-deck {
+        position: absolute;
+        left: 6px;
+        top: 25px;
+        width: 50px;
+        height: 11px;
+        border-radius: 999px;
+        background: var(--player-dark);
+        box-shadow: inset 0 0 0 3px var(--player-main);
+    }
+
+    .bridge-arch {
+        position: absolute;
+        top: 26px;
+        width: 20px;
+        height: 20px;
+        border: 4px solid var(--player-light);
+        border-bottom: 0;
+        border-radius: 20px 20px 0 0;
+    }
+
+    .bridge-arch-a {
+        left: 10px;
+    }
+
+    .bridge-arch-b {
+        right: 10px;
+    }
+
+    /* Watchtower */
+    .tower-top {
+        position: absolute;
+        left: 17px;
+        top: 5px;
+        width: 28px;
+        height: 16px;
+        border-radius: 4px;
+        background: var(--player-main);
+        border: 2px solid var(--player-dark);
+    }
+
+    .tower-body {
+        position: absolute;
+        left: 23px;
+        top: 19px;
+        width: 16px;
+        height: 27px;
+        background: #f8efe0;
+        border: 2px solid var(--player-dark);
+    }
+
+    .tower-legs {
+        position: absolute;
+        left: 16px;
+        top: 43px;
+        width: 30px;
+        height: 13px;
+        border-left: 4px solid var(--player-dark);
+        border-right: 4px solid var(--player-dark);
+        border-bottom: 4px solid var(--player-dark);
+        transform: perspective(20px) rotateX(12deg);
+    }
+
+    .bg-board-flat {
+        background: linear-gradient(180deg, #173943 0%, #102832 100%);
+    }
+
+    .bg-board-texture {
+        background-image: radial-gradient(
+            circle,
+            rgba(255, 255, 255, 0.055) 1px,
+            transparent 1px
+        );
+        background-size: 28px 28px;
     }
 </style>

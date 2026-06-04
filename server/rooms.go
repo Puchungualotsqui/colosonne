@@ -12,13 +12,24 @@ import (
 )
 
 type Client struct {
-	Conn     WSConn
-	RoomID   string
-	PlayerID engine.PlayerId
-	UserID   *int64
-	Name     string
-	IsGuest  bool
-	Send     chan ServerMessage
+	ID        string
+	SessionID string
+	Conn      WSConn
+	RoomID    string
+	PlayerID  engine.PlayerId
+	UserID    *int64
+	Name      string
+	IsGuest   bool
+	Role      string // "player" or "spectator"
+	Send      chan ServerMessage
+
+	closeOnce sync.Once
+}
+
+func (c *Client) CloseSend() {
+	c.closeOnce.Do(func() {
+		close(c.Send)
+	})
 }
 
 type WSConn interface {
@@ -27,11 +38,48 @@ type WSConn interface {
 	Close() error
 }
 
+type RoomStatus string
+
+const (
+	RoomStatusLobby   RoomStatus = "lobby"
+	RoomStatusPlaying RoomStatus = "playing"
+	RoomStatusEnded   RoomStatus = "ended"
+)
+
+type RoomSettings struct {
+	MaxPlayers int  `json:"maxPlayers"`
+	Spectators bool `json:"spectators"`
+}
+
+type RoomPlayer struct {
+	PlayerID engine.PlayerId `json:"playerId"`
+	ClientID string          `json:"clientId"`
+	UserID   *int64          `json:"userId,omitempty"`
+	Name     string          `json:"name"`
+	IsGuest  bool            `json:"isGuest"`
+	Ready    bool            `json:"ready"`
+	IsHost   bool            `json:"isHost"`
+}
+
+type RoomSpectator struct {
+	ClientID string `json:"clientId"`
+	UserID   *int64 `json:"userId,omitempty"`
+	Name     string `json:"name"`
+	IsGuest  bool   `json:"isGuest"`
+}
+
 type Room struct {
-	ID      string
-	Game    *engine.GameState
-	Clients map[engine.PlayerId]*Client
-	mu      sync.Mutex
+	ID       string
+	Status   RoomStatus
+	Game     *engine.GameState
+	Settings RoomSettings
+	HostID   string
+
+	Clients    map[engine.PlayerId]*Client
+	Spectators map[string]*Client
+	Ready      map[engine.PlayerId]bool
+
+	mu sync.Mutex
 }
 
 type RoomManager struct {
@@ -52,9 +100,17 @@ func (rm *RoomManager) CreateRoom() *Room {
 	id := shortRoomID()
 
 	room := &Room{
-		ID:      id,
-		Game:    nil,
-		Clients: make(map[engine.PlayerId]*Client),
+		ID:     id,
+		Status: RoomStatusLobby,
+		Game:   nil,
+		Settings: RoomSettings{
+			MaxPlayers: 2,
+			Spectators: true,
+		},
+		HostID:     "",
+		Clients:    make(map[engine.PlayerId]*Client),
+		Spectators: make(map[string]*Client),
+		Ready:      make(map[engine.PlayerId]bool),
 	}
 
 	rm.rooms[id] = room
@@ -77,36 +133,151 @@ func (r *Room) AddClient(c *Client) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if len(r.Clients) >= 2 {
+	if r.Status != RoomStatusLobby {
+		return errors.New("game already started")
+	}
+
+	c.RoomID = r.ID
+
+	// Same session reconnecting/rejoining: return existing player seat.
+	for playerID, existing := range r.Clients {
+		if existing.SessionID != "" && existing.SessionID == c.SessionID {
+			c.RoomID = r.ID
+			c.PlayerID = playerID
+			c.Role = "player"
+
+			r.Clients[playerID] = c
+
+			if r.HostID == existing.ID {
+				r.HostID = c.ID
+			}
+
+			existing.CloseSend()
+			_ = existing.Conn.Close()
+
+			return nil
+		}
+	}
+
+	for clientID, existing := range r.Spectators {
+		if existing.SessionID != "" && existing.SessionID == c.SessionID {
+			c.RoomID = r.ID
+			c.PlayerID = 0
+			c.Role = "spectator"
+
+			delete(r.Spectators, clientID)
+			r.Spectators[c.ID] = c
+
+			existing.CloseSend()
+			_ = existing.Conn.Close()
+
+			return nil
+		}
+	}
+
+	if len(r.Clients) < r.Settings.MaxPlayers {
+		var playerID engine.PlayerId = 1
+		for {
+			if _, exists := r.Clients[playerID]; !exists {
+				break
+			}
+			playerID++
+		}
+
+		c.PlayerID = playerID
+		c.Role = "player"
+		r.Clients[playerID] = c
+		r.Ready[playerID] = false
+
+		if r.HostID == "" {
+			r.HostID = c.ID
+		}
+
+		return nil
+	}
+
+	if !r.Settings.Spectators {
 		return errors.New("room is full")
 	}
 
-	var playerID engine.PlayerId = 1
-	if _, exists := r.Clients[1]; exists {
-		playerID = 2
-	}
-
-	c.PlayerID = playerID
-	c.RoomID = r.ID
-	r.Clients[playerID] = c
-
-	if len(r.Clients) == 2 && r.Game == nil {
-		players := []engine.Player{
-			{Id: 1},
-			{Id: 2},
-		}
-
-		r.Game = engine.NewGameState(players, rand.New(rand.NewSource(time.Now().UnixNano())))
-	}
+	c.PlayerID = 0
+	c.Role = "spectator"
+	r.Spectators[c.ID] = c
 
 	return nil
 }
 
-func (r *Room) RemoveClient(playerID engine.PlayerId) {
+func (r *Room) AddSpectator(c *Client) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	delete(r.Clients, playerID)
+	c.RoomID = r.ID
+	c.PlayerID = 0
+	c.Role = "spectator"
+
+	r.Spectators[c.ID] = c
+}
+
+func (r *Room) RemoveClient(c *Client) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	hostLeft := c.ID == r.HostID
+
+	if c.Role == "player" && c.PlayerID != 0 {
+		current, ok := r.Clients[c.PlayerID]
+		if ok && current == c {
+			delete(r.Clients, c.PlayerID)
+			delete(r.Ready, c.PlayerID)
+		}
+
+		if hostLeft {
+			r.promoteHostLocked()
+		}
+
+		return
+	}
+
+	if c.ID != "" {
+		current, ok := r.Spectators[c.ID]
+		if ok && current == c {
+			delete(r.Spectators, c.ID)
+		}
+	}
+
+	if hostLeft {
+		r.promoteHostLocked()
+	}
+}
+
+func (r *Room) promoteHostLocked() {
+	if r.HostID != "" {
+		for _, client := range r.Clients {
+			if client.ID == r.HostID {
+				return
+			}
+		}
+	}
+
+	r.HostID = ""
+
+	var lowestPlayerID engine.PlayerId = 0
+	var nextHost *Client
+
+	for playerID, client := range r.Clients {
+		if nextHost == nil || playerID < lowestPlayerID {
+			lowestPlayerID = playerID
+			nextHost = client
+		}
+	}
+
+	if nextHost != nil {
+		r.HostID = nextHost.ID
+
+		for playerID := range r.Ready {
+			r.Ready[playerID] = false
+		}
+	}
 }
 
 func (r *Room) Broadcast(msg ServerMessage) {
@@ -117,35 +288,170 @@ func (r *Room) Broadcast(msg ServerMessage) {
 		select {
 		case client.Send <- msg:
 		default:
-			close(client.Send)
+			client.CloseSend()
 			delete(r.Clients, playerID)
+			delete(r.Ready, playerID)
+		}
+	}
+
+	for clientID, client := range r.Spectators {
+		select {
+		case client.Send <- msg:
+		default:
+			client.CloseSend()
+			delete(r.Spectators, clientID)
 		}
 	}
 }
 
 func (r *Room) BroadcastState() {
 	r.mu.Lock()
-	game := r.Game
-	roomID := r.ID
-	playerCount := len(r.Clients)
-	r.mu.Unlock()
 
-	if game == nil {
-		r.Broadcast(ServerMessage{
-			Type: "room_waiting",
-			Data: map[string]any{
-				"roomId":  roomID,
-				"players": playerCount,
-			},
+	roomID := r.ID
+	status := r.Status
+	game := r.Game
+	settings := r.Settings
+	hostID := r.HostID
+
+	players := make([]RoomPlayer, 0, len(r.Clients))
+	for playerID, client := range r.Clients {
+		players = append(players, RoomPlayer{
+			PlayerID: playerID,
+			ClientID: client.ID,
+			UserID:   client.UserID,
+			Name:     client.Name,
+			IsGuest:  client.IsGuest,
+			Ready:    r.Ready[playerID],
+			IsHost:   client.ID == hostID,
 		})
-		return
 	}
 
+	spectators := make([]RoomSpectator, 0, len(r.Spectators))
+	for _, client := range r.Spectators {
+		spectators = append(spectators, RoomSpectator{
+			ClientID: client.ID,
+			UserID:   client.UserID,
+			Name:     client.Name,
+			IsGuest:  client.IsGuest,
+		})
+	}
+
+	r.mu.Unlock()
+
 	r.Broadcast(ServerMessage{
-		Type: "state",
+		Type: "room_state",
 		Data: map[string]any{
-			"roomId": roomID,
-			"game":   game,
+			"roomId":     roomID,
+			"status":     status,
+			"settings":   settings,
+			"players":    players,
+			"spectators": spectators,
+			"game":       game,
 		},
 	})
+}
+
+func (r *Room) SetReady(c *Client, ready bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if c.Role != "player" || c.PlayerID == 0 {
+		return errors.New("only players can ready")
+	}
+
+	if r.Status != RoomStatusLobby {
+		return errors.New("game already started")
+	}
+
+	r.Ready[c.PlayerID] = ready
+	return nil
+}
+
+func (r *Room) CanStartLocked(c *Client) error {
+	if r.Status != RoomStatusLobby {
+		return errors.New("game already started")
+	}
+
+	if c.ID != r.HostID {
+		return errors.New("only host can start the game")
+	}
+
+	if len(r.Clients) < 2 {
+		return errors.New("need at least 2 players")
+	}
+
+	for playerID := range r.Clients {
+		if !r.Ready[playerID] {
+			return errors.New("all players must be ready")
+		}
+	}
+
+	return nil
+}
+
+func (r *Room) StartGame(c *Client) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if err := r.CanStartLocked(c); err != nil {
+		return err
+	}
+
+	players := make([]engine.Player, 0, len(r.Clients))
+	for playerID := range r.Clients {
+		players = append(players, engine.Player{Id: playerID})
+	}
+
+	r.Game = engine.NewGameState(players, rand.New(rand.NewSource(time.Now().UnixNano())))
+	r.Status = RoomStatusPlaying
+
+	return nil
+}
+
+func (r *Room) Kick(c *Client, targetPlayerID engine.PlayerId) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if c.ID != r.HostID {
+		return errors.New("only host can kick players")
+	}
+
+	if r.Status != RoomStatusLobby {
+		return errors.New("cannot kick after game starts")
+	}
+
+	target, ok := r.Clients[targetPlayerID]
+	if !ok {
+		return errors.New("player not found")
+	}
+
+	if target.ID == r.HostID {
+		return errors.New("host cannot kick themselves")
+	}
+
+	// Remove from the room first.
+	delete(r.Clients, targetPlayerID)
+	delete(r.Ready, targetPlayerID)
+
+	r.promoteHostLocked()
+
+	// Mark the target as no longer in a room.
+	// This prevents the kicked client from sending lobby/game commands
+	// even if their websocket remains briefly open.
+	target.RoomID = ""
+	target.PlayerID = 0
+	target.Role = ""
+
+	// Tell the kicked client. Do not close the socket here.
+	// The frontend will receive this and call leaveRoom().
+	select {
+	case target.Send <- ServerMessage{
+		Type: "kicked",
+		Data: "you were kicked from the room",
+	}:
+	default:
+		// If the socket is already unhealthy, ignore.
+	}
+
+	return nil
 }

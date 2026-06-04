@@ -35,7 +35,6 @@ func (a *App) HandleGuestLogin(w http.ResponseWriter, r *http.Request) {
 
 	session, err := a.currentSession(r)
 	if err == nil && session.Token != "" {
-		// Already has a valid session.
 		me, err := a.meFromSession(session)
 		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, err.Error())
@@ -48,7 +47,13 @@ func (a *App) HandleGuestLogin(w http.ResponseWriter, r *http.Request) {
 
 	guestName := "Guest" + randomDigits(4)
 
-	session, err = a.createGuestSession(guestName, 14*24*time.Hour)
+	userID, err := a.createGuestUser(guestName)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	session, err = a.createUserSession(userID, 7*24*time.Hour)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -59,8 +64,9 @@ func (a *App) HandleGuestLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, MeResponse{
 		Authenticated: true,
 		IsGuest:       true,
+		UserID:        &userID,
 		DisplayName:   guestName,
-		Karma:         0,
+		Karma:         50,
 	})
 }
 
@@ -128,6 +134,23 @@ func (a *App) currentSession(r *http.Request) (*SessionInfo, error) {
 
 	if userID.Valid {
 		session.UserID = &userID.Int64
+
+		// Refresh last seen for both guests and real users.
+		_, _ = a.DB.Exec(`
+			UPDATE users
+			SET last_seen_at = ?
+			WHERE id = ?
+		`, time.Now(), userID.Int64)
+
+		// Rolling guest/session expiry: active users keep their cookie alive.
+		newExpiresAt := time.Now().Add(7 * 24 * time.Hour)
+		_, _ = a.DB.Exec(`
+			UPDATE sessions
+			SET expires_at = ?
+			WHERE token = ?
+		`, newExpiresAt, token)
+
+		session.ExpiresAt = newExpiresAt
 	}
 
 	if guestName.Valid {
@@ -150,12 +173,13 @@ func (a *App) meFromSession(session *SessionInfo) (MeResponse, error) {
 	var displayName string
 	var avatarURL sql.NullString
 	var karma int
+	var isGuest bool
 
 	err := a.DB.QueryRow(`
-		SELECT display_name, avatar_url, karma
+		SELECT display_name, avatar_url, karma, is_guest
 		FROM users
 		WHERE id = ?
-	`, *session.UserID).Scan(&displayName, &avatarURL, &karma)
+	`, *session.UserID).Scan(&displayName, &avatarURL, &karma, &isGuest)
 
 	if err != nil {
 		return MeResponse{}, err
@@ -163,7 +187,7 @@ func (a *App) meFromSession(session *SessionInfo) (MeResponse, error) {
 
 	resp := MeResponse{
 		Authenticated: true,
-		IsGuest:       false,
+		IsGuest:       isGuest,
 		UserID:        session.UserID,
 		DisplayName:   displayName,
 		Karma:         karma,
@@ -273,6 +297,19 @@ func writeJSONError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]any{
 		"error": message,
 	})
+}
+
+func (a *App) createGuestUser(displayName string) (int64, error) {
+	result, err := a.DB.Exec(`
+		INSERT INTO users (display_name, avatar_url, karma, is_guest, last_seen_at)
+		VALUES (?, NULL, 50, 1, ?)
+	`, displayName, time.Now())
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
 }
 
 // TODO: Google and Discord auth

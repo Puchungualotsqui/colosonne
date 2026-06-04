@@ -20,6 +20,7 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 				"playerId": c.PlayerID,
 				"name":     c.Name,
 				"isGuest":  c.IsGuest,
+				"role":     c.Role,
 			},
 		}
 
@@ -52,6 +53,38 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 				"playerId": c.PlayerID,
 				"name":     c.Name,
 				"isGuest":  c.IsGuest,
+				"role":     c.Role,
+			},
+		}
+
+		room.BroadcastState()
+		return nil
+
+	case "spectate_room":
+		payload, err := decodeData[JoinRoomPayload](msg.Data)
+		if err != nil {
+			return err
+		}
+
+		room, ok := s.Rooms.GetRoom(payload.RoomID)
+		if !ok {
+			return errors.New("room not found")
+		}
+
+		if payload.Name != "" {
+			c.Name = payload.Name
+		}
+
+		room.AddSpectator(c)
+
+		c.Send <- ServerMessage{
+			Type: "room_spectating",
+			Data: map[string]any{
+				"roomId":   room.ID,
+				"playerId": c.PlayerID,
+				"name":     c.Name,
+				"isGuest":  c.IsGuest,
+				"role":     c.Role,
 			},
 		}
 
@@ -62,6 +95,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room, err := s.requireRoom(c)
 		if err != nil {
 			return err
+		}
+
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
 		}
 
 		payload, err := decodeData[PickPayload](msg.Data)
@@ -86,6 +123,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 			return err
 		}
 
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
+		}
+
 		payload, err := decodeData[PlaceTilePayload](msg.Data)
 		if err != nil {
 			return err
@@ -106,6 +147,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room, err := s.requireRoom(c)
 		if err != nil {
 			return err
+		}
+
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
 		}
 
 		payload, err := decodeData[UseDraftPayload](msg.Data)
@@ -130,6 +175,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 			return err
 		}
 
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
+		}
+
 		room.mu.Lock()
 		err = room.Game.PassPlace(c.PlayerID)
 		room.mu.Unlock()
@@ -145,6 +194,10 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room, err := s.requireRoom(c)
 		if err != nil {
 			return err
+		}
+
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
 		}
 
 		payload, err := decodeData[BuildPayload](msg.Data)
@@ -174,12 +227,74 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room.BroadcastState()
 		return nil
 
+	case "set_ready":
+		room, err := s.requireAnyRoom(c)
+		if err != nil {
+			return err
+		}
+
+		payload, err := decodeData[ReadyPayload](msg.Data)
+		if err != nil {
+			return err
+		}
+
+		if err := room.SetReady(c, payload.Ready); err != nil {
+			return err
+		}
+
+		room.BroadcastState()
+		return nil
+
+	case "start_game":
+		room, err := s.requireAnyRoom(c)
+		if err != nil {
+			return err
+		}
+
+		if err := room.StartGame(c); err != nil {
+			return err
+		}
+
+		room.BroadcastState()
+		return nil
+
+	case "kick_player":
+		room, err := s.requireAnyRoom(c)
+		if err != nil {
+			return err
+		}
+
+		payload, err := decodeData[KickPayload](msg.Data)
+		if err != nil {
+			return err
+		}
+
+		if err := room.Kick(c, payload.PlayerID); err != nil {
+			return err
+		}
+
+		room.BroadcastState()
+		return nil
+
 	default:
 		return errors.New("unknown message type")
 	}
 }
 
 func (s *WebSocketServer) requireRoom(c *Client) (*Room, error) {
+	room, err := s.requireAnyRoom(c)
+	if err != nil {
+		return nil, err
+	}
+
+	if room.Status != RoomStatusPlaying || room.Game == nil {
+		return nil, errors.New("game has not started")
+	}
+
+	return room, nil
+}
+
+func (s *WebSocketServer) requireAnyRoom(c *Client) (*Room, error) {
 	if c.RoomID == "" {
 		return nil, errors.New("client is not in a room")
 	}
@@ -187,10 +302,6 @@ func (s *WebSocketServer) requireRoom(c *Client) (*Room, error) {
 	room, ok := s.Rooms.GetRoom(c.RoomID)
 	if !ok {
 		return nil, errors.New("room not found")
-	}
-
-	if room.Game == nil {
-		return nil, errors.New("game has not started")
 	}
 
 	return room, nil

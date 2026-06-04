@@ -28,9 +28,11 @@ func (s *WebSocketServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 
 	client := &Client{
+		ID:      secureClientID(),
 		Conn:    conn,
 		Name:    "Guest",
 		IsGuest: true,
+		Role:    "",
 		Send:    make(chan ServerMessage, 32),
 	}
 
@@ -38,6 +40,7 @@ func (s *WebSocketServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		me, err := s.App.meFromSession(session)
 		if err == nil {
+			client.SessionID = session.Token
 			client.Name = me.DisplayName
 			client.UserID = me.UserID
 			client.IsGuest = me.IsGuest
@@ -60,14 +63,14 @@ func writePump(c *Client) {
 
 func readPump(s *WebSocketServer, c *Client) {
 	defer func() {
-		if c.RoomID != "" && c.PlayerID != 0 {
+		if c.RoomID != "" {
 			if room, ok := s.Rooms.GetRoom(c.RoomID); ok {
-				room.RemoveClient(c.PlayerID)
+				room.RemoveClient(c)
 				room.BroadcastState()
 			}
 		}
 
-		close(c.Send)
+		c.CloseSend()
 		_ = c.Conn.Close()
 	}()
 
@@ -79,12 +82,26 @@ func readPump(s *WebSocketServer, c *Client) {
 
 		var msg ClientMessage
 		if err := json.Unmarshal(raw, &msg); err != nil {
-			c.Send <- ServerMessage{Type: "error", Data: "invalid message"}
+			select {
+			case c.Send <- ServerMessage{Type: "error", Data: "invalid message"}:
+			default:
+			}
 			continue
 		}
 
 		if err := s.handleMessage(c, msg); err != nil {
-			c.Send <- ServerMessage{Type: "error", Data: err.Error()}
+			select {
+			case c.Send <- ServerMessage{Type: "error", Data: err.Error()}:
+			default:
+			}
 		}
 	}
+}
+
+func secureClientID() string {
+	token, err := secureToken(16)
+	if err != nil {
+		return "client"
+	}
+	return token
 }

@@ -9,12 +9,24 @@ export type WSHandlers = {
 
 export class GameSocket {
   private ws: WebSocket;
+  private opened = false;
+  private queue: Array<{ type: string; data: unknown }> = [];
 
   constructor(handlers: WSHandlers) {
     const protocol = location.protocol === "https:" ? "wss:" : "ws:";
     this.ws = new WebSocket(`${protocol}//${location.host}/ws`);
 
-    this.ws.onopen = () => handlers.onOpen?.();
+    this.ws.onopen = () => {
+      this.opened = true;
+
+      for (const msg of this.queue) {
+        this.send(msg.type, msg.data);
+      }
+
+      this.queue = [];
+      handlers.onOpen?.();
+    };
+
     this.ws.onclose = () => handlers.onClose?.();
     this.ws.onerror = (err) => handlers.onError?.(err);
 
@@ -25,6 +37,11 @@ export class GameSocket {
   }
 
   send(type: string, data: unknown = {}) {
+    if (!this.opened) {
+      this.queue.push({ type, data });
+      return;
+    }
+
     this.ws.send(JSON.stringify({ type, data }));
   }
 

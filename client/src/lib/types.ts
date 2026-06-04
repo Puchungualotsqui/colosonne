@@ -74,25 +74,66 @@ export type GameState = {
   Round: number;
 };
 
+export type RoomIdentity = {
+  roomId: string;
+  playerId: number;
+  name: string;
+  isGuest: boolean;
+  role: "player" | "spectator";
+};
+
+export type RoomPlayer = {
+  playerId: number;
+  clientId: string;
+  userId?: number;
+  name: string;
+  isGuest: boolean;
+  ready: boolean;
+  isHost: boolean;
+};
+
+export type RoomSpectator = {
+  clientId: string;
+  userId?: number;
+  name: string;
+  isGuest: boolean;
+};
+
+export type RoomSettings = {
+  maxPlayers: number;
+  spectators: boolean;
+};
+
+export type RoomState = {
+  roomId: string;
+  status: "lobby" | "playing" | "ended";
+  settings: RoomSettings;
+  players: RoomPlayer[];
+  spectators: RoomSpectator[];
+  game: GameState | null;
+};
+
 export type ServerMessage =
+  | { type: "room_created"; data: RoomIdentity }
+  | { type: "room_joined"; data: RoomIdentity }
+  | { type: "room_spectating"; data: RoomIdentity }
+  | { type: "room_state"; data: RoomState }
   | {
-      type: "room_created";
+      type: "room_waiting";
       data: {
         roomId: string;
-        playerId: number;
-        name: string;
-        isGuest: boolean;
+        players: number;
+        spectators: number;
       };
     }
   | {
-      type: "room_joined";
+      type: "state";
       data: {
         roomId: string;
-        playerId: number;
-        name: string;
-        isGuest: boolean;
+        players: number;
+        spectators: number;
+        game: GameState;
       };
     }
-  | { type: "room_waiting"; data: { roomId: string; players: number } }
-  | { type: "state"; data: { roomId: string; game: GameState } }
+  | { type: "kicked"; data: string }
   | { type: "error"; data: string };
