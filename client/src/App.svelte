@@ -9,6 +9,7 @@
     } from "./lib/types";
     import { guestLogin, getMe } from "./lib/api";
     import { GameSocket } from "./lib/ws";
+    import GameView from "./components/GameView.svelte";
 
     let user: LandingUser = null;
     let loading = false;
@@ -213,151 +214,22 @@
         onCopyRoomCode={copyRoomCode}
     />
 {:else if inGame && game}
-    <main class="min-h-screen bg-[#15323a] p-6 text-[#f8efe0]">
-        <div class="mx-auto max-w-6xl">
-            <div class="mb-6 flex items-center justify-between gap-4">
-                <div>
-                    <div
-                        class="text-sm font-bold uppercase tracking-[0.2em] text-[#9fc9c5]"
-                    >
-                        Room
-                    </div>
-
-                    <div class="mt-1 flex items-center gap-3">
-                        <div
-                            class="rounded-2xl bg-[#f2c36b] px-4 py-2 text-2xl font-black tracking-wider text-[#142833]"
-                        >
-                            {roomId}
-                        </div>
-
-                        <button
-                            class="cursor-pointer rounded-xl bg-[#f8efe0]/10 px-3 py-2 text-sm font-bold text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16"
-                            type="button"
-                            on:click={copyRoomCode}
-                        >
-                            Copy
-                        </button>
-                    </div>
-                </div>
-
-                <button
-                    class="cursor-pointer rounded-xl bg-[#b94b3f] px-4 py-2 font-bold text-white hover:bg-[#c9574a]"
-                    type="button"
-                    on:click={leaveRoom}
-                >
-                    Leave
-                </button>
-            </div>
-
-            <div class="grid gap-4 lg:grid-cols-[280px_1fr]">
-                <aside
-                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-                >
-                    <div class="text-lg font-bold">Session</div>
-
-                    <div class="mt-4 space-y-2 text-sm text-[#d9e6df]">
-                        <div>
-                            Role:
-                            <span class="font-bold text-[#fff7e8]">
-                                {role || "unknown"}
-                            </span>
-                        </div>
-
-                        <div>
-                            Player ID:
-                            <span class="font-bold text-[#fff7e8]">
-                                {playerId || "-"}
-                            </span>
-                        </div>
-
-                        <div>
-                            Round:
-                            <span class="font-bold text-[#fff7e8]">
-                                {game.Round}
-                            </span>
-                        </div>
-
-                        <div>
-                            Phase:
-                            <span class="font-bold text-[#fff7e8]">
-                                {game.CurrentPhase}
-                            </span>
-                        </div>
-
-                        <div>
-                            Current Player:
-                            <span class="font-bold text-[#fff7e8]">
-                                {game.CurrentPlayer}
-                            </span>
-                        </div>
-                    </div>
-                </aside>
-
-                <section
-                    class="rounded-3xl bg-[#ead7aa] p-5 text-[#142833] shadow-[0_12px_0_rgba(44,31,21,0.22)] ring-1 ring-black/20"
-                >
-                    <div class="mb-4 flex items-center justify-between">
-                        <div>
-                            <div class="text-2xl font-black">
-                                Frontiers Match
-                            </div>
-                            <div class="text-sm font-bold text-[#6b4a2f]">
-                                Temporary debug game view
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="grid gap-4 md:grid-cols-2">
-                        <div class="rounded-2xl bg-[#fff7e8] p-4">
-                            <div class="font-black">Market</div>
-
-                            <div class="mt-3 grid gap-2">
-                                {#each game.Market as item, index}
-                                    <button
-                                        class="cursor-pointer rounded-xl bg-[#f2c36b] px-3 py-2 text-left text-sm font-bold hover:bg-[#ffd27c] disabled:cursor-not-allowed disabled:opacity-50"
-                                        type="button"
-                                        disabled={role !== "player" ||
-                                            game.CurrentPlayer !== playerId}
-                                        on:click={() =>
-                                            socket?.send("pick", {
-                                                marketIndex: index,
-                                            })}
-                                    >
-                                        [{index}] Kind {item.Kind}
-                                    </button>
-                                {/each}
-                            </div>
-                        </div>
-
-                        <div class="rounded-2xl bg-[#fff7e8] p-4">
-                            <div class="font-black">Map</div>
-
-                            <div
-                                class="mt-3 max-h-[320px] overflow-auto rounded-xl bg-[#ead7aa] p-3 font-mono text-xs"
-                            >
-                                {#each game.Map as tile}
-                                    <div>
-                                        ({tile.X}, {tile.Y}) biome={tile.Biome}
-                                        owner={tile.HasOwner ? tile.Owner : "-"}
-                                        structure={tile.Structure}
-                                    </div>
-                                {/each}
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </div>
-
-            {#if error}
-                <div
-                    class="mt-5 rounded-2xl bg-[#b94b3f] px-5 py-3 font-semibold text-white"
-                >
-                    {error}
-                </div>
-            {/if}
-        </div>
-    </main>
-{:else}
+    <GameView
+        {game}
+        {roomId}
+        {playerId}
+        {role}
+        {error}
+        onPick={(marketIndex) => socket?.send("pick", { marketIndex })}
+        onPlaceTile={(x, y) => socket?.send("place_tile", { x, y })}
+        onUseDraft={(x, y) => socket?.send("use_draft", { x, y })}
+        onPassPlace={() => socket?.send("pass_place", {})}
+        onBuild={(action, x, y) => socket?.send("build", { action, x, y })}
+        onPassBuild={() =>
+            socket?.send("build", { action: "pass", x: 0, y: 0 })}
+        onLeaveRoom={leaveRoom}
+        onCopyRoomCode={copyRoomCode}
+    />
     <main
         class="grid min-h-screen place-items-center bg-[#15323a] p-6 text-[#f8efe0]"
     >
