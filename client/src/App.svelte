@@ -10,6 +10,7 @@
     import { guestLogin, getMe } from "./lib/api";
     import { GameSocket } from "./lib/ws";
     import GameView from "./components/GameView.svelte";
+    import { debugLog } from "./lib/debug";
 
     let user: LandingUser = null;
     let loading = false;
@@ -44,15 +45,26 @@
     function connectAndSend(type: string, data: unknown = {}) {
         socket?.close();
 
+        debugLog("ws.connectAndSend", {
+            type,
+            data,
+        });
+
         socket = new GameSocket({
             onMessage: handleMessage,
             onOpen: () => {
+                debugLog("ws.open", {
+                    sending: type,
+                    data,
+                });
+
                 socket?.send(type, data);
             },
             onClose: () => {
-                console.log("socket closed");
+                debugLog("ws.close");
             },
             onError: () => {
+                debugLog("ws.error");
                 error = "Connection error";
                 loading = false;
             },
@@ -108,6 +120,8 @@
     }
 
     function handleMessage(msg: ServerMessage) {
+        debugLog("ws.message", msg);
+
         switch (msg.type) {
             case "room_created":
             case "room_joined":
@@ -117,6 +131,17 @@
                 break;
 
             case "room_state":
+                debugLog("room.state", {
+                    roomId: msg.data.roomId,
+                    status: msg.data.status,
+                    myPlayerId: playerId,
+                    myRole: role,
+                    currentPlayer: msg.data.game?.CurrentPlayer,
+                    currentPhase: msg.data.game?.CurrentPhase,
+                    round: msg.data.game?.Round,
+                    players: msg.data.players,
+                });
+
                 roomState = msg.data;
                 roomId = msg.data.roomId;
                 game = msg.data.game;
@@ -157,6 +182,8 @@
     }
 
     function applyRoomIdentity(identity: RoomIdentity) {
+        debugLog("room.identity", identity);
+
         roomId = identity.roomId;
         playerId = identity.playerId;
         role = identity.role;
@@ -230,6 +257,7 @@
         onLeaveRoom={leaveRoom}
         onCopyRoomCode={copyRoomCode}
     />
+{:else}
     <main
         class="grid min-h-screen place-items-center bg-[#15323a] p-6 text-[#f8efe0]"
     >

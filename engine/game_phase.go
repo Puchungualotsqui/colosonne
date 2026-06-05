@@ -11,7 +11,6 @@ const (
 	PhasePick GamePhase = iota
 	PhasePlace
 	PhaseBuild
-	PhaseRecount
 )
 
 type GameState struct {
@@ -212,9 +211,6 @@ func (gs *GameState) beginPhase(phase GamePhase) {
 		if len(order) > 0 {
 			gs.CurrentPlayer = order[gs.TurnIndex]
 		}
-
-	case PhaseRecount:
-		gs.CurrentPlayer = 0
 	}
 }
 
@@ -258,9 +254,7 @@ func (gs *GameState) PhaseCompleted() {
 			return
 		}
 
-		gs.beginPhase(PhaseRecount)
-
-	case PhaseRecount:
+		// Recount is automatic and internal.
 		gs.ResolveInfluence()
 		gs.advanceToNextRound()
 	}

@@ -7,6 +7,7 @@
         type GameState,
         type Tile,
     } from "../lib/types";
+    import { debugLog } from "../lib/debug";
 
     export let game: GameState;
     export let playerId = 0;
@@ -63,6 +64,20 @@
     $: candidates = canPlaceTile ? placementCandidates(game.Map) : [];
     $: renderHexes = buildRenderHexes(game.Map, candidates);
     $: boardSize = calculateBoardSize(renderHexes);
+
+    $: debugLog("board.state", {
+        role,
+        playerId,
+        currentPlayer: game.CurrentPlayer,
+        currentPhase: game.CurrentPhase,
+        isMyTurn,
+        hand,
+        canPlaceTile,
+        canUseDraft,
+        canBuild,
+        selectedBuildAction,
+        candidatesCount: candidates.length,
+    });
 
     function key(x: number, y: number) {
         return `${x},${y}`;
@@ -162,7 +177,7 @@
 
     function biomeClass(tile: Tile | undefined, candidate: boolean) {
         if (candidate) {
-            return "border-[#d1a45f] bg-[#ead7aa]/45 text-[#6b4a2f]";
+            return "border-[#d1a45f] bg-[#ead7aa]/35 text-[#6b4a2f]";
         }
 
         switch (tile?.Biome) {
@@ -203,7 +218,7 @@
             case Structure.Bridge:
                 return "Bridge";
             case Structure.Watchtower:
-                return "Tower";
+                return "Watchtower";
             case Structure.Road:
                 return "Road";
             default:
@@ -211,8 +226,25 @@
         }
     }
 
+    function structureIcon(structure: Structure) {
+        switch (structure) {
+            case Structure.Outpost:
+                return "⌂";
+            case Structure.City:
+                return "▦";
+            case Structure.Bridge:
+                return "⌒";
+            case Structure.Watchtower:
+                return "♜";
+            case Structure.Road:
+                return "━";
+            default:
+                return "";
+        }
+    }
+
     function ownerClass(tile: Tile) {
-        if (!tile.HasOwner) return "bg-[#f8efe0]/85 text-[#5c4934]";
+        if (!tile.HasOwner) return "bg-[#f8efe0]/80 text-[#5c4934]";
 
         if (tile.Owner === 1) {
             return "bg-[#1d4e89] text-white";
@@ -222,11 +254,56 @@
             return "bg-[#b94b3f] text-white";
         }
 
-        return "bg-[#f8efe0]/85 text-[#5c4934]";
+        return "bg-[#f8efe0]/80 text-[#5c4934]";
+    }
+
+    function ownerLabel(tile: Tile) {
+        if (!tile.HasOwner) return "Open";
+        return `P${tile.Owner}`;
+    }
+
+    function tileTooltip(tile: Tile | undefined, candidate: boolean) {
+        if (candidate) {
+            return "Empty frontier hex";
+        }
+
+        if (!tile) {
+            return "";
+        }
+
+        const owner = tile.HasOwner ? `P${tile.Owner}` : "Open";
+        const structure =
+            tile.Structure !== Structure.None
+                ? structureLabel(tile.Structure)
+                : "No structure";
+
+        return `${biomeLabel(tile.Biome)} · ${owner} · ${structure}`;
     }
 
     function handleHexClick(hex: RenderHex) {
+        debugLog("board.hex.click", {
+            x: hex.x,
+            y: hex.y,
+            hasTile: !!hex.tile,
+            candidate: hex.candidate,
+            role,
+            playerId,
+            currentPlayer: game.CurrentPlayer,
+            currentPhase: game.CurrentPhase,
+            isMyTurn,
+            hand,
+            canPlaceTile,
+            canUseDraft,
+            canBuild,
+            selectedBuildAction,
+        });
+
         if (hex.candidate && canPlaceTile) {
+            debugLog("board.place_tile.send", {
+                x: hex.x,
+                y: hex.y,
+            });
+
             onPlaceTile(hex.x, hex.y);
             return;
         }
@@ -234,11 +311,22 @@
         if (!hex.tile) return;
 
         if (canUseDraft) {
+            debugLog("board.use_draft.send", {
+                x: hex.tile.X,
+                y: hex.tile.Y,
+            });
+
             onUseDraft(hex.tile.X, hex.tile.Y);
             return;
         }
 
         if (canBuild && selectedBuildAction) {
+            debugLog("board.build.send", {
+                action: selectedBuildAction,
+                x: hex.tile.X,
+                y: hex.tile.Y,
+            });
+
             onBuild(selectedBuildAction, hex.tile.X, hex.tile.Y);
         }
     }
@@ -258,13 +346,7 @@
         class="rounded-[26px] border border-[#6b4a2f]/35 bg-[#ead7aa] p-4 shadow-inner"
     >
         <div class="mb-4 flex items-center justify-between gap-3">
-            <div>
-                <h2 class="text-xl font-black text-[#142833]">Board</h2>
-                <p class="text-sm font-semibold text-[#6b4a2f]">
-                    Click highlighted empty hexes to place tiles. Click existing
-                    tiles to use drafts or build.
-                </p>
-            </div>
+            <h2 class="text-xl font-black text-[#142833]">Board</h2>
 
             <div
                 class="rounded-xl bg-[#f8efe0] px-3 py-1 text-sm font-black text-[#142833]"
@@ -281,16 +363,17 @@
                 {#each renderHexes as hex}
                     <button
                         class={[
-                            "clip-hex absolute flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
+                            "group clip-hex absolute flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
                             biomeClass(hex.tile, hex.candidate),
                             isClickable(hex)
                                 ? "cursor-pointer hover:-translate-y-1 hover:brightness-110"
                                 : "cursor-default",
-                            hex.candidate ? "border-dashed opacity-90" : "",
+                            hex.candidate ? "border-dashed opacity-80" : "",
                         ].join(" ")}
                         style={`left: ${hex.left}px; top: ${hex.top}px; width: ${HEX_W}px; height: ${HEX_H}px;`}
                         type="button"
                         disabled={!isClickable(hex)}
+                        aria-label={tileTooltip(hex.tile, hex.candidate)}
                         on:click={() => handleHexClick(hex)}
                     >
                         <div
@@ -298,48 +381,38 @@
                         ></div>
 
                         {#if hex.candidate}
-                            <div class="text-center">
-                                <div class="text-2xl font-black">+</div>
-                                <div
-                                    class="text-[10px] font-black uppercase tracking-wider"
-                                >
-                                    Place
-                                </div>
+                            <div
+                                class="relative z-10 grid h-10 w-10 place-items-center rounded-full bg-[#f8efe0]/70 text-2xl font-black text-[#6b4a2f]"
+                            >
+                                +
                             </div>
                         {:else if hex.tile}
-                            <div
-                                class="relative z-10 flex h-full w-full flex-col items-center justify-center text-center"
-                            >
+                            {#if hex.tile.Structure !== Structure.None}
                                 <div
-                                    class="text-xs font-black uppercase tracking-wide"
+                                    class="relative z-10 grid h-12 w-12 place-items-center rounded-2xl bg-[#f8efe0]/70 text-2xl font-black text-[#142833] shadow-sm"
+                                    title={structureLabel(hex.tile.Structure)}
                                 >
-                                    {biomeLabel(hex.tile.Biome)}
+                                    {structureIcon(hex.tile.Structure)}
                                 </div>
+                            {/if}
 
-                                {#if hex.tile.Structure !== Structure.None}
-                                    <div
-                                        class="mt-1 rounded-lg bg-[#f8efe0]/80 px-2 py-0.5 text-[11px] font-black text-[#142833]"
-                                    >
-                                        {structureLabel(hex.tile.Structure)}
-                                    </div>
-                                {/if}
-
-                                <div class="mt-1 text-[10px] font-bold">
-                                    ({hex.tile.X}, {hex.tile.Y})
+                            {#if hex.tile.HasOwner}
+                                <div
+                                    class={[
+                                        "absolute bottom-2 left-1/2 z-20 h-5 min-w-8 -translate-x-1/2 rounded-full px-2 text-[10px] font-black leading-5 shadow-sm",
+                                        ownerClass(hex.tile),
+                                    ].join(" ")}
+                                >
+                                    {ownerLabel(hex.tile)}
                                 </div>
-                            </div>
-
-                            <div
-                                class={[
-                                    "absolute bottom-2 left-1/2 z-20 -translate-x-1/2 rounded-lg px-2 py-0.5 text-[10px] font-black",
-                                    ownerClass(hex.tile),
-                                ].join(" ")}
-                            >
-                                {hex.tile.HasOwner
-                                    ? `P${hex.tile.Owner}`
-                                    : "open"}
-                            </div>
+                            {/if}
                         {/if}
+
+                        <div
+                            class="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-50 hidden w-max max-w-[220px] -translate-x-1/2 rounded-xl bg-[#142833] px-3 py-2 text-xs font-bold text-[#f8efe0] shadow-xl ring-1 ring-white/10 group-hover:block"
+                        >
+                            {tileTooltip(hex.tile, hex.candidate)}
+                        </div>
                     </button>
                 {/each}
             </div>

@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log"
 	"math/rand"
 	"sync"
 	"time"
@@ -155,6 +156,15 @@ func (r *Room) AddClient(c *Client) error {
 			existing.CloseSend()
 			_ = existing.Conn.Close()
 
+			log.Printf(
+				"[room:%s] reconnect player client=%s oldClient=%s session=%s player=%d",
+				r.ID,
+				c.ID,
+				existing.ID,
+				c.SessionID,
+				playerID,
+			)
+
 			return nil
 		}
 	}
@@ -170,6 +180,14 @@ func (r *Room) AddClient(c *Client) error {
 
 			existing.CloseSend()
 			_ = existing.Conn.Close()
+
+			log.Printf(
+				"[room:%s] add spectator client=%s session=%s name=%s",
+				r.ID,
+				c.ID,
+				c.SessionID,
+				c.Name,
+			)
 
 			return nil
 		}
@@ -192,6 +210,15 @@ func (r *Room) AddClient(c *Client) error {
 		if r.HostID == "" {
 			r.HostID = c.ID
 		}
+
+		log.Printf(
+			"[room:%s] add player client=%s session=%s player=%d name=%s",
+			r.ID,
+			c.ID,
+			c.SessionID,
+			c.PlayerID,
+			c.Name,
+		)
 
 		return nil
 	}
@@ -338,6 +365,34 @@ func (r *Room) BroadcastState() {
 
 	r.mu.Unlock()
 
+	currentPhase := any(nil)
+	currentPlayer := any(nil)
+	round := any(nil)
+	mapTiles := 0
+	marketCards := 0
+
+	if game != nil {
+		currentPhase = game.CurrentPhase
+		currentPlayer = game.CurrentPlayer
+		round = game.Round
+		mapTiles = len(game.Map)
+		marketCards = len(game.Market)
+	}
+
+	log.Printf(
+		"[room:%s] broadcast state status=%s players=%d spectators=%d game=%v phase=%v currentPlayer=%v round=%v tiles=%d market=%d",
+		roomID,
+		status,
+		len(players),
+		len(spectators),
+		game != nil,
+		currentPhase,
+		currentPlayer,
+		round,
+		mapTiles,
+		marketCards,
+	)
+
 	r.Broadcast(ServerMessage{
 		Type: "room_state",
 		Data: map[string]any{
@@ -364,6 +419,15 @@ func (r *Room) SetReady(c *Client, ready bool) error {
 	}
 
 	r.Ready[c.PlayerID] = ready
+
+	log.Printf(
+		"[room:%s] ready client=%s player=%d ready=%v",
+		r.ID,
+		c.ID,
+		c.PlayerID,
+		ready,
+	)
+
 	return nil
 }
 
@@ -404,6 +468,13 @@ func (r *Room) StartGame(c *Client) error {
 
 	r.Game = engine.NewGameState(players, rand.New(rand.NewSource(time.Now().UnixNano())))
 	r.Status = RoomStatusPlaying
+
+	log.Printf(
+		"[room:%s] start game host=%s players=%d",
+		r.ID,
+		c.ID,
+		len(r.Clients),
+	)
 
 	return nil
 }

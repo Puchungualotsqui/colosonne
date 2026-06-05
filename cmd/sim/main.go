@@ -50,11 +50,6 @@ func main() {
 
 		case engine.PhaseBuild:
 			handleBuild(reader, gs)
-
-		case engine.PhaseRecount:
-			fmt.Println("\nResolving influence and producing resources...")
-			pressEnter(reader)
-			gs.PhaseCompleted()
 		}
 	}
 
@@ -431,8 +426,6 @@ func describePhase(p engine.GamePhase) string {
 		return "Place"
 	case engine.PhaseBuild:
 		return "Build"
-	case engine.PhaseRecount:
-		return "Recount"
 	default:
 		return "UnknownPhase"
 	}

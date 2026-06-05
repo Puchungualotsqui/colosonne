@@ -119,14 +119,6 @@ func main() {
 		}
 	}
 
-	fmt.Println("\n=== Recount Phase ===")
-	if gs.CurrentPhase == engine.PhaseRecount {
-		fmt.Println("Resolving influence and producing resources...")
-		gs.PhaseCompleted()
-	}
-
-	printState(gs)
-
 	fmt.Println("\n=== Round 2 Begins ===")
 	printTurnOrders(gs)
 }
@@ -214,8 +206,6 @@ func describePhase(p engine.GamePhase) string {
 		return "Place"
 	case engine.PhaseBuild:
 		return "Build"
-	case engine.PhaseRecount:
-		return "Recount"
 	default:
 		return "UnknownPhase"
 	}

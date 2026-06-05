@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -47,6 +48,15 @@ func (s *WebSocketServer) HandleWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	log.Printf(
+		"[ws] connected client=%s session=%s name=%s userID=%v isGuest=%v",
+		client.ID,
+		client.SessionID,
+		client.Name,
+		client.UserID,
+		client.IsGuest,
+	)
+
 	go writePump(client)
 	readPump(s, client)
 }
@@ -63,6 +73,14 @@ func writePump(c *Client) {
 
 func readPump(s *WebSocketServer, c *Client) {
 	defer func() {
+		log.Printf(
+			"[ws] disconnect client=%s room=%s role=%s player=%d",
+			c.ID,
+			c.RoomID,
+			c.Role,
+			c.PlayerID,
+		)
+
 		if c.RoomID != "" {
 			if room, ok := s.Rooms.GetRoom(c.RoomID); ok {
 				room.RemoveClient(c)

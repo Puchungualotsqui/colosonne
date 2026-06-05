@@ -2,9 +2,19 @@ package server
 
 import (
 	"errors"
+	"log"
 )
 
 func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
+	log.Printf(
+		"[cmd] type=%s client=%s room=%s role=%s player=%d",
+		msg.Type,
+		c.ID,
+		c.RoomID,
+		c.Role,
+		c.PlayerID,
+	)
+
 	switch msg.Type {
 	case "create_room":
 		room := s.Rooms.CreateRoom()
@@ -107,12 +117,30 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		}
 
 		room.mu.Lock()
+
+		log.Printf(
+			"[cmd:pick] room=%s player=%d marketIndex=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			payload.MarketIndex,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
 		err = room.Game.PickMarketItem(c.PlayerID, payload.MarketIndex)
 		room.mu.Unlock()
 
 		if err != nil {
 			return err
 		}
+
+		log.Printf(
+			"[cmd:pick:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
 
 		room.BroadcastState()
 		return nil
@@ -133,12 +161,32 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		}
 
 		room.mu.Lock()
+
+		log.Printf(
+			"[cmd:place_tile] room=%s player=%d x=%d y=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			payload.X,
+			payload.Y,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
 		err = room.Game.PlaceTile(c.PlayerID, payload.X, payload.Y)
 		room.mu.Unlock()
 
 		if err != nil {
 			return err
 		}
+
+		log.Printf(
+			"[cmd:place_tile:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d tiles=%d",
+			room.ID,
+			c.PlayerID,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+			len(room.Game.Map),
+		)
 
 		room.BroadcastState()
 		return nil
@@ -207,6 +255,17 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 
 		room.mu.Lock()
 
+		log.Printf(
+			"[cmd:build] room=%s player=%d action=%s x=%d y=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			payload.Action,
+			payload.X,
+			payload.Y,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
 		switch payload.Action {
 		case "outpost":
 			err = room.Game.BuildOutpost(c.PlayerID, payload.X, payload.Y)
@@ -223,6 +282,14 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		if err != nil {
 			return err
 		}
+
+		log.Printf(
+			"[cmd:build:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
 
 		room.BroadcastState()
 		return nil

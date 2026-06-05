@@ -11,6 +11,7 @@
         type GameState,
         type Player,
     } from "../lib/types";
+    import { debugLog } from "../lib/debug";
 
     export let game: GameState;
     export let roomId = "";
@@ -44,6 +45,17 @@
     $: if (game.CurrentPhase !== GamePhase.Build) {
         selectedBuildAction = null;
     }
+    $: debugLog("gameview.state", {
+        roomId,
+        role,
+        playerId,
+        currentPlayer: game.CurrentPlayer,
+        currentPhase: game.CurrentPhase,
+        round: game.Round,
+        isMyTurn,
+        me,
+        selectedBuildAction,
+    });
 
     function phaseName(phase: GamePhase) {
         switch (phase) {
@@ -53,8 +65,6 @@
                 return "Place / Use";
             case GamePhase.Build:
                 return "Build";
-            case GamePhase.Recount:
-                return "Influence";
             default:
                 return "Unknown";
         }
@@ -163,7 +173,7 @@
             return "Choose a build action, or pass.";
         }
 
-        return "Resolving influence and production.";
+        return "Waiting for game state.";
     }
 
     function playerColor(playerId: number) {
@@ -173,6 +183,15 @@
     }
 
     function handleBuild(action: "outpost" | "city", x: number, y: number) {
+        debugLog("build.send", {
+            action,
+            x,
+            y,
+            playerId,
+            currentPlayer: game.CurrentPlayer,
+            currentPhase: game.CurrentPhase,
+        });
+
         onBuild(action, x, y);
         selectedBuildAction = null;
     }
@@ -383,7 +402,16 @@
                                     : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
                             ].join(" ")}
                             type="button"
-                            on:click={() => (selectedBuildAction = "outpost")}
+                            on:click={() => {
+                                selectedBuildAction = "outpost";
+                                debugLog("build.select", {
+                                    action: "outpost",
+                                    playerId,
+                                    currentPlayer: game.CurrentPlayer,
+                                    currentPhase: game.CurrentPhase,
+                                    isMyTurn,
+                                });
+                            }}
                         >
                             Build Outpost
                         </button>
@@ -396,7 +424,16 @@
                                     : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
                             ].join(" ")}
                             type="button"
-                            on:click={() => (selectedBuildAction = "city")}
+                            on:click={() => {
+                                selectedBuildAction = "city";
+                                debugLog("build.select", {
+                                    action: "city",
+                                    playerId,
+                                    currentPlayer: game.CurrentPlayer,
+                                    currentPhase: game.CurrentPhase,
+                                    isMyTurn,
+                                });
+                            }}
                         >
                             Upgrade City
                         </button>

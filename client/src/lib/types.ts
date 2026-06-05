@@ -2,7 +2,6 @@ export enum GamePhase {
   Pick = 0,
   Place = 1,
   Build = 2,
-  Recount = 3,
 }
 
 export enum DraftKind {
