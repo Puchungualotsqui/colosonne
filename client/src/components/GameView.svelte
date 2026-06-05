@@ -12,6 +12,7 @@
         type Player,
     } from "../lib/types";
     import { debugLog } from "../lib/debug";
+    import HandCard from "./HandCard.svelte";
 
     export let game: GameState;
     export let roomId = "";
@@ -45,6 +46,7 @@
     $: if (game.CurrentPhase !== GamePhase.Build) {
         selectedBuildAction = null;
     }
+
     $: debugLog("gameview.state", {
         roomId,
         role,
@@ -57,12 +59,16 @@
         selectedBuildAction,
     });
 
+    $: handIsUsable = canUseHandLocally(me?.Hand);
+    $: canPassPlace =
+        isMyTurn && game.CurrentPhase === GamePhase.Place && !handIsUsable;
+
     function phaseName(phase: GamePhase) {
         switch (phase) {
             case GamePhase.Pick:
                 return "Draft";
             case GamePhase.Place:
-                return "Place / Use";
+                return "Place";
             case GamePhase.Build:
                 return "Build";
             default:
@@ -136,46 +142,6 @@
         }
     }
 
-    function instruction() {
-        if (role === "spectator") {
-            return "You are watching this match. Spectators cannot make moves.";
-        }
-
-        if (!isMyTurn) {
-            return `Waiting for ${currentPlayerName}.`;
-        }
-
-        if (game.CurrentPhase === GamePhase.Pick) {
-            return "Choose one card from the market.";
-        }
-
-        if (game.CurrentPhase === GamePhase.Place) {
-            if (!me?.Hand) {
-                return "You have no draft item. Pass the place/use step.";
-            }
-
-            if (me.Hand.Kind === DraftKind.Tile) {
-                return "Click a highlighted empty hex to place your tile.";
-            }
-
-            return "Click a board tile to use your drafted item, or pass if it is not usable.";
-        }
-
-        if (game.CurrentPhase === GamePhase.Build) {
-            if (selectedBuildAction === "outpost") {
-                return "Click a land tile to build an outpost.";
-            }
-
-            if (selectedBuildAction === "city") {
-                return "Click one of your plain outposts to upgrade it into a city.";
-            }
-
-            return "Choose a build action, or pass.";
-        }
-
-        return "Waiting for game state.";
-    }
-
     function playerColor(playerId: number) {
         if (playerId === 1) return "bg-[#1d4e89]";
         if (playerId === 2) return "bg-[#b94b3f]";
@@ -194,6 +160,104 @@
 
         onBuild(action, x, y);
         selectedBuildAction = null;
+    }
+
+    function hexNeighbors(x: number, y: number) {
+        return [
+            { x: x + 1, y },
+            { x: x + 1, y: y - 1 },
+            { x, y: y - 1 },
+            { x: x - 1, y },
+            { x: x - 1, y: y + 1 },
+            { x, y: y + 1 },
+        ];
+    }
+
+    function tileAt(x: number, y: number) {
+        return game.Map.find((t) => t.X === x && t.Y === y);
+    }
+
+    function controlsTile(
+        tile: { HasOwner: boolean; Owner: number } | undefined,
+    ) {
+        return !!tile && tile.HasOwner && tile.Owner === playerId;
+    }
+
+    function hasAdjacentControlledTile(x: number, y: number) {
+        return hexNeighbors(x, y).some((n) => controlsTile(tileAt(n.x, n.y)));
+    }
+
+    function canUseHandLocally(item: DraftItem | null | undefined) {
+        if (!item) return false;
+
+        switch (item.Kind) {
+            case DraftKind.Tile:
+                return game.Map.some((tile) =>
+                    hexNeighbors(tile.X, tile.Y).some((n) => !tileAt(n.x, n.y)),
+                );
+
+            case DraftKind.Upgrade:
+                return game.Map.some(
+                    (tile) =>
+                        tile.Biome !== Biome.River &&
+                        controlsTile(tile) &&
+                        tile.UpgradeLevel < 3,
+                );
+
+            case DraftKind.Structure:
+                return game.Map.some((tile) =>
+                    canUseStructureOnTileLocally(item.Structure, tile),
+                );
+
+            case DraftKind.Action:
+                if (item.Action === Action.Expansion) return true;
+                if (item.Action === Action.Reinforce)
+                    return game.Map.length > 0;
+
+                if (item.Action === Action.Harvest) {
+                    return game.Map.some(
+                        (tile) =>
+                            controlsTile(tile) && tile.Biome !== Biome.River,
+                    );
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    function canUseStructureOnTileLocally(structure: Structure, tile: any) {
+        if (!tile) return false;
+
+        if (tile.Structure !== Structure.None) {
+            return false;
+        }
+
+        switch (structure) {
+            case Structure.Bridge:
+                return (
+                    tile.Biome === Biome.River &&
+                    hasAdjacentControlledTile(tile.X, tile.Y)
+                );
+
+            case Structure.Road:
+            case Structure.Watchtower:
+                return tile.Biome !== Biome.River && controlsTile(tile);
+
+            case Structure.Outpost:
+                return (
+                    tile.Biome !== Biome.River &&
+                    (!tile.HasOwner || tile.Owner === playerId)
+                );
+
+            case Structure.City:
+                return false;
+
+            default:
+                return false;
+        }
     }
 </script>
 
@@ -264,35 +328,49 @@
                     Match
                 </div>
 
-                <div
-                    class="mt-4 space-y-3 text-sm font-semibold text-[#d9e6df]"
-                >
-                    <div class="flex justify-between gap-3">
-                        <span>Round</span>
-                        <span class="font-black text-[#fff7e8]"
-                            >{game.Round}</span
+                <div class="mt-4 grid grid-cols-3 gap-2">
+                    <div
+                        class="rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
+                    >
+                        <div
+                            class="text-[10px] font-black uppercase tracking-wider text-[#9fc9c5]"
                         >
+                            Round
+                        </div>
+                        <div class="mt-1 text-2xl font-black text-[#fff7e8]">
+                            {game.Round}
+                        </div>
                     </div>
 
-                    <div class="flex justify-between gap-3">
-                        <span>Phase</span>
-                        <span class="font-black text-[#fff7e8]"
-                            >{currentPhaseName}</span
+                    <div
+                        class="rounded-2xl bg-[#f2c36b] p-3 text-center text-[#142833]"
+                    >
+                        <div
+                            class="text-[10px] font-black uppercase tracking-wider opacity-70"
                         >
+                            Phase
+                        </div>
+                        <div class="mt-1 text-sm font-black">
+                            {currentPhaseName}
+                        </div>
                     </div>
 
-                    <div class="flex justify-between gap-3">
-                        <span>Turn</span>
-                        <span class="font-black text-[#fff7e8]"
-                            >{currentPlayerName}</span
+                    <div
+                        class={[
+                            "rounded-2xl p-3 text-center ring-1",
+                            isMyTurn
+                                ? "bg-[#73c4bd] text-[#102b38] ring-[#73c4bd]"
+                                : "bg-[#f8efe0]/10 text-[#fff7e8] ring-[#f8efe0]/10",
+                        ].join(" ")}
+                    >
+                        <div
+                            class="text-[10px] font-black uppercase tracking-wider opacity-70"
                         >
-                    </div>
-
-                    <div class="flex justify-between gap-3">
-                        <span>Your role</span>
-                        <span class="font-black capitalize text-[#fff7e8]"
-                            >{role || "unknown"}</span
-                        >
+                            Turn
+                        </div>
+                        <div class="mt-1 text-sm font-black">
+                            {currentPlayerName}
+                        </div>
                     </div>
                 </div>
             </section>
@@ -305,34 +383,42 @@
                 <div class="mt-4 space-y-3">
                     {#each game.Players as player}
                         <div
-                            class="rounded-2xl bg-[#f8efe0]/10 p-4 ring-1 ring-[#f8efe0]/10"
+                            class={[
+                                "rounded-2xl p-4 ring-1",
+                                player.Id === game.CurrentPlayer
+                                    ? "bg-[#f2c36b]/16 ring-[#f2c36b]/45"
+                                    : "bg-[#f8efe0]/10 ring-[#f8efe0]/10",
+                            ].join(" ")}
                         >
-                            <div
-                                class="flex items-center justify-between gap-3"
-                            >
-                                <div class="flex items-center gap-3">
-                                    <div
-                                        class={[
-                                            "grid h-10 w-10 place-items-center rounded-2xl text-sm font-black text-white",
-                                            playerColor(player.Id),
-                                        ].join(" ")}
-                                    >
-                                        P{player.Id}
+                            <div class="flex items-center gap-3">
+                                <div
+                                    class={[
+                                        "grid h-10 w-10 place-items-center rounded-2xl text-sm font-black text-white",
+                                        playerColor(player.Id),
+                                    ].join(" ")}
+                                >
+                                    P{player.Id}
+                                </div>
+
+                                <div>
+                                    <div class="font-black text-[#fff7e8]">
+                                        {player.Id === playerId
+                                            ? "You"
+                                            : `Player ${player.Id}`}
                                     </div>
 
-                                    <div>
-                                        <div class="font-black text-[#fff7e8]">
-                                            {player.Id === playerId
-                                                ? "You"
-                                                : `Player ${player.Id}`}
-                                        </div>
-                                        <div
-                                            class="text-xs font-semibold text-[#9fc9c5]"
-                                        >
-                                            Hand: {draftName(player.Hand)}
-                                        </div>
+                                    <div
+                                        class="mt-1 text-xs font-semibold text-[#9fc9c5]"
+                                    >
+                                        {player.Id === game.CurrentPlayer
+                                            ? "Taking turn"
+                                            : "Waiting"}
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <HandCard item={player.Hand} size="sm" />
                             </div>
 
                             <div
@@ -340,18 +426,23 @@
                             >
                                 <div
                                     class="rounded-xl bg-[#5b9368]/35 px-2 py-2"
+                                    title="Wood"
                                 >
-                                    Wood<br />{resourceAmount(player, 1)}
+                                    W<br />{resourceAmount(player, 1)}
                                 </div>
+
                                 <div
                                     class="rounded-xl bg-[#a8adb2]/35 px-2 py-2"
+                                    title="Stone"
                                 >
-                                    Stone<br />{resourceAmount(player, 2)}
+                                    S<br />{resourceAmount(player, 2)}
                                 </div>
+
                                 <div
                                     class="rounded-xl bg-[#d9b56a]/35 px-2 py-2"
+                                    title="Grain"
                                 >
-                                    Grain<br />{resourceAmount(player, 3)}
+                                    G<br />{resourceAmount(player, 3)}
                                 </div>
                             </div>
                         </div>
@@ -371,91 +462,139 @@
         />
 
         <aside class="space-y-5">
-            <section
-                class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-            >
-                <h2 class="text-xl font-black text-[#fff7e8]">Action</h2>
-
-                <div
-                    class="mt-3 rounded-2xl bg-[#f8efe0]/10 p-4 text-sm font-semibold leading-6 text-[#d9e6df] ring-1 ring-[#f8efe0]/10"
+            {#if isMyTurn && game.CurrentPhase !== GamePhase.Pick}
+                <section
+                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
                 >
-                    {instruction()}
-                </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-xl font-black text-[#fff7e8]">
+                            {game.CurrentPhase === GamePhase.Place
+                                ? "Use"
+                                : "Build"}
+                        </h2>
 
-                {#if game.CurrentPhase === GamePhase.Place && isMyTurn}
-                    <button
-                        class="mt-4 w-full cursor-pointer rounded-2xl bg-[#f8efe0]/10 px-5 py-3 font-black text-[#fff7e8] shadow-[0_6px_0_rgba(0,0,0,0.18)] ring-1 ring-[#f8efe0]/20 transition hover:bg-[#f8efe0]/16 active:translate-y-1"
-                        type="button"
-                        on:click={onPassPlace}
-                    >
-                        Pass Place / Use
-                    </button>
-                {/if}
-
-                {#if game.CurrentPhase === GamePhase.Build && isMyTurn}
-                    <div class="mt-4 grid gap-3">
-                        <button
-                            class={[
-                                "cursor-pointer rounded-2xl px-5 py-3 font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "outpost"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
-                            ].join(" ")}
-                            type="button"
-                            on:click={() => {
-                                selectedBuildAction = "outpost";
-                                debugLog("build.select", {
-                                    action: "outpost",
-                                    playerId,
-                                    currentPlayer: game.CurrentPlayer,
-                                    currentPhase: game.CurrentPhase,
-                                    isMyTurn,
-                                });
-                            }}
+                        <div
+                            class="rounded-xl bg-[#73c4bd] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#102b38]"
                         >
-                            Build Outpost
-                        </button>
+                            Your turn
+                        </div>
+                    </div>
+
+                    {#if game.CurrentPhase === GamePhase.Place}
+                        {#if me?.Hand}
+                            <div class="mt-4">
+                                <HandCard item={me.Hand} size="lg" />
+                            </div>
+                        {/if}
+
+                        {#if canPassPlace}
+                            <button
+                                class="mt-4 w-full cursor-pointer rounded-2xl bg-[#b94b3f] px-5 py-3 font-black text-white shadow-[0_6px_0_rgba(0,0,0,0.18)] transition hover:bg-[#c9574a] active:translate-y-1"
+                                type="button"
+                                on:click={onPassPlace}
+                            >
+                                Discard
+                            </button>
+                        {/if}
+                    {/if}
+
+                    {#if game.CurrentPhase === GamePhase.Build}
+                        {#if selectedBuildAction}
+                            <div
+                                class="mt-4 rounded-2xl bg-[#f2c36b]/20 p-3 text-center text-sm font-black text-[#f8efe0] ring-1 ring-[#f2c36b]/40"
+                            >
+                                {selectedBuildAction === "outpost"
+                                    ? "Click a land tile"
+                                    : "Click your plain outpost"}
+                            </div>
+                        {/if}
+
+                        <div class="mt-4 grid grid-cols-2 gap-3">
+                            <button
+                                class={[
+                                    "cursor-pointer rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "outpost"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
+                                ].join(" ")}
+                                type="button"
+                                title="Build Outpost"
+                                on:click={() => {
+                                    selectedBuildAction = "outpost";
+                                    debugLog("build.select", {
+                                        action: "outpost",
+                                        playerId,
+                                        currentPlayer: game.CurrentPlayer,
+                                        currentPhase: game.CurrentPhase,
+                                        isMyTurn,
+                                    });
+                                }}
+                            >
+                                <div class="text-3xl">⌂</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Outpost
+                                </div>
+                            </button>
+
+                            <button
+                                class={[
+                                    "cursor-pointer rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "city"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
+                                ].join(" ")}
+                                type="button"
+                                title="Upgrade City"
+                                on:click={() => {
+                                    selectedBuildAction = "city";
+                                    debugLog("build.select", {
+                                        action: "city",
+                                        playerId,
+                                        currentPlayer: game.CurrentPlayer,
+                                        currentPhase: game.CurrentPhase,
+                                        isMyTurn,
+                                    });
+                                }}
+                            >
+                                <div class="text-3xl">▦</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    City
+                                </div>
+                            </button>
+                        </div>
 
                         <button
-                            class={[
-                                "cursor-pointer rounded-2xl px-5 py-3 font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "city"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
-                            ].join(" ")}
-                            type="button"
-                            on:click={() => {
-                                selectedBuildAction = "city";
-                                debugLog("build.select", {
-                                    action: "city",
-                                    playerId,
-                                    currentPlayer: game.CurrentPlayer,
-                                    currentPhase: game.CurrentPhase,
-                                    isMyTurn,
-                                });
-                            }}
-                        >
-                            Upgrade City
-                        </button>
-
-                        <button
-                            class="cursor-pointer rounded-2xl bg-[#b94b3f] px-5 py-3 font-black text-white shadow-[0_6px_0_rgba(0,0,0,0.18)] transition hover:bg-[#c9574a] active:translate-y-1"
+                            class="mt-4 w-full cursor-pointer rounded-2xl bg-[#f8efe0]/10 px-5 py-3 font-black text-[#fff7e8] shadow-[0_6px_0_rgba(0,0,0,0.18)] ring-1 ring-[#f8efe0]/20 transition hover:bg-[#f8efe0]/16 active:translate-y-1"
                             type="button"
                             on:click={onPassBuild}
                         >
-                            Pass Build
+                            Pass
                         </button>
-                    </div>
-                {/if}
+                    {/if}
 
-                {#if error}
+                    {#if error}
+                        <div
+                            class="mt-4 rounded-2xl bg-[#b94b3f] px-5 py-3 text-sm font-semibold text-white"
+                        >
+                            {error}
+                        </div>
+                    {/if}
+                </section>
+            {:else if error}
+                <section
+                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
+                >
                     <div
-                        class="mt-4 rounded-2xl bg-[#b94b3f] px-5 py-3 font-semibold text-white"
+                        class="rounded-2xl bg-[#b94b3f] px-5 py-3 text-sm font-semibold text-white"
                     >
                         {error}
                     </div>
-                {/if}
-            </section>
+                </section>
+            {/if}
 
             <Market {game} {playerId} {role} {onPick} />
         </aside>

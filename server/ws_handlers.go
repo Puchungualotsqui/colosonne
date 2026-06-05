@@ -232,6 +232,14 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room.mu.Unlock()
 
 		if err != nil {
+			log.Printf(
+				"[cmd:pass_place:error] room=%s player=%d phase=%d currentPlayer=%d err=%v",
+				room.ID,
+				c.PlayerID,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+				err,
+			)
 			return err
 		}
 

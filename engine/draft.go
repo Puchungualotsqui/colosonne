@@ -178,10 +178,8 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 			return errors.New("bridge can only be built on river tiles")
 		}
 
-		// For MVP, Bridge may be placed on an unowned river if adjacent to player territory.
-		// This makes it usable despite rivers being unownable/resource-less.
-		if !gs.HasAdjacentOwnedTile(playerId, x, y) {
-			return errors.New("bridge must be adjacent to a tile you control")
+		if !gs.hasAdjacentControlledTile(playerId, x, y) {
+			return errors.New("bridge must be adjacent to your controlled territory")
 		}
 
 		tile.Structure = Bridge
@@ -190,7 +188,7 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 
 	case Road, Watchtower:
 		if tile.Biome == River {
-			return errors.New("only bridges can be built on river tiles")
+			return errors.New("this structure cannot be built on river tiles")
 		}
 
 		if !gs.playerControlsTile(playerId, tile) {
@@ -203,7 +201,7 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 
 	case Outpost:
 		if tile.Biome == River {
-			return errors.New("cannot build outpost on river tiles")
+			return errors.New("outpost cannot be built on river tiles")
 		}
 
 		if tile.HasOwner && tile.Owner != playerId {

@@ -166,7 +166,11 @@ func (gs *GameState) PassPlace(playerId PlayerId) error {
 		return err
 	}
 
-	// Discard unusable drafted item.
+	if player.Hand != nil && gs.CanUseHand(playerId) {
+		return errors.New("you must use your drafted item because it has a valid use")
+	}
+
+	// Discard only if there is no valid way to use the drafted item.
 	player.Hand = nil
 
 	gs.PhaseCompleted()
