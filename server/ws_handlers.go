@@ -288,6 +288,17 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room.mu.Unlock()
 
 		if err != nil {
+			log.Printf(
+				"[cmd:build:error] room=%s player=%d action=%s x=%d y=%d phase=%d currentPlayer=%d err=%v",
+				room.ID,
+				c.PlayerID,
+				payload.Action,
+				payload.X,
+				payload.Y,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+				err,
+			)
 			return err
 		}
 

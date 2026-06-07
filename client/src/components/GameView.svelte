@@ -1,4 +1,6 @@
 <script lang="ts">
+    import ResourceIcon from "./ResourceIcon.svelte";
+    import CostBadge from "./CostBadge.svelte";
     import Board from "./Board.svelte";
     import Market from "./Market.svelte";
     import {
@@ -35,6 +37,9 @@
 
     let selectedBuildAction: "outpost" | "city" | null = null;
 
+    let previousResourcesByPlayer = new Map<number, string>();
+    let gainedResourcesByPlayer = new Map<number, Map<number, number>>();
+
     $: me = game.Players.find((p) => p.Id === playerId);
     $: isMyTurn = role === "player" && game.CurrentPlayer === playerId;
     $: currentPhaseName = phaseName(game.CurrentPhase);
@@ -47,21 +52,42 @@
         selectedBuildAction = null;
     }
 
-    $: debugLog("gameview.state", {
-        roomId,
-        role,
-        playerId,
-        currentPlayer: game.CurrentPlayer,
-        currentPhase: game.CurrentPhase,
-        round: game.Round,
-        isMyTurn,
-        me,
-        selectedBuildAction,
-    });
-
     $: handIsUsable = canUseHandLocally(me?.Hand);
     $: canPassPlace =
         isMyTurn && game.CurrentPhase === GamePhase.Place && !handIsUsable;
+
+    $: trackResourceGains(game);
+
+    $: canAffordOutpost = canPay(me, { wood: 2, stone: 1 });
+    $: canAffordCity = canPay(me, { stone: 3, grain: 2 });
+
+    $: hasOutpostBuildTarget = game.Map.some((tile) =>
+        isOutpostBuildTarget(tile),
+    );
+
+    $: hasCityUpgradeTarget = game.Map.some((tile) =>
+        isCityUpgradeTarget(tile),
+    );
+
+    $: canSelectOutpost = canAffordOutpost && hasOutpostBuildTarget;
+    $: canSelectCity = canAffordCity && hasCityUpgradeTarget;
+
+    $: outpostTitle = !canAffordOutpost
+        ? "Need 2 Wood and 1 Stone"
+        : !hasOutpostBuildTarget
+          ? "No valid land tile"
+          : "Build Outpost";
+
+    $: cityTitle = !canAffordCity
+        ? "Need 3 Stone and 2 Grain"
+        : !hasCityUpgradeTarget
+          ? "Requires your plain outpost"
+          : "Upgrade City";
+
+    $: myWoodGain = resourceGainAmount(playerId, 1);
+    $: myStoneGain = resourceGainAmount(playerId, 2);
+    $: myGrainGain = resourceGainAmount(playerId, 3);
+    $: hasMyResourceGain = myWoodGain > 0 || myStoneGain > 0 || myGrainGain > 0;
 
     function phaseName(phase: GamePhase) {
         switch (phase) {
@@ -76,8 +102,95 @@
         }
     }
 
-    function resourceAmount(player: Player, resourceId: number) {
-        return player.Resources?.[resourceId] ?? 0;
+    function resourceAmount(player: Player | undefined, resourceId: number) {
+        return player?.Resources?.[resourceId] ?? 0;
+    }
+
+    function resourceKey(player: Player) {
+        return JSON.stringify({
+            wood: resourceAmount(player, 1),
+            stone: resourceAmount(player, 2),
+            grain: resourceAmount(player, 3),
+        });
+    }
+
+    function trackResourceGains(currentGame: GameState) {
+        const nextPrevious = new Map(previousResourcesByPlayer);
+        const nextGained = new Map<number, Map<number, number>>();
+
+        for (const player of currentGame.Players) {
+            const oldRaw = previousResourcesByPlayer.get(player.Id);
+            const newRaw = resourceKey(player);
+
+            if (oldRaw) {
+                const oldValue = JSON.parse(oldRaw);
+                const gained = new Map<number, number>();
+
+                const woodDelta = resourceAmount(player, 1) - oldValue.wood;
+                const stoneDelta = resourceAmount(player, 2) - oldValue.stone;
+                const grainDelta = resourceAmount(player, 3) - oldValue.grain;
+
+                if (woodDelta > 0) gained.set(1, woodDelta);
+                if (stoneDelta > 0) gained.set(2, stoneDelta);
+                if (grainDelta > 0) gained.set(3, grainDelta);
+
+                if (gained.size > 0) {
+                    nextGained.set(player.Id, gained);
+                }
+            }
+
+            nextPrevious.set(player.Id, newRaw);
+        }
+
+        previousResourcesByPlayer = nextPrevious;
+        gainedResourcesByPlayer = nextGained;
+    }
+
+    function resourcePulse(targetPlayerId: number, resourceId: number) {
+        return resourceGainAmount(targetPlayerId, resourceId) > 0;
+    }
+
+    function resourceGainAmount(targetPlayerId: number, resourceId: number) {
+        return (
+            gainedResourcesByPlayer.get(targetPlayerId)?.get(resourceId) ?? 0
+        );
+    }
+
+    function canPay(
+        player: Player | undefined,
+        cost: { wood?: number; stone?: number; grain?: number },
+    ) {
+        if (!player) return false;
+
+        return (
+            resourceAmount(player, 1) >= (cost.wood ?? 0) &&
+            resourceAmount(player, 2) >= (cost.stone ?? 0) &&
+            resourceAmount(player, 3) >= (cost.grain ?? 0)
+        );
+    }
+
+    function isOutpostBuildTarget(tile: {
+        Biome: Biome;
+        Structure: Structure;
+        HasOwner: boolean;
+        Owner: number;
+    }) {
+        if (tile.Biome === Biome.River) return false;
+        if (tile.Structure !== Structure.None) return false;
+        if (tile.HasOwner && tile.Owner !== playerId) return false;
+        return true;
+    }
+
+    function isCityUpgradeTarget(tile: {
+        Biome: Biome;
+        Structure: Structure;
+        StructureOwner: number;
+    }) {
+        return (
+            tile.Biome === Biome.Plain &&
+            tile.Structure === Structure.Outpost &&
+            tile.StructureOwner === playerId
+        );
     }
 
     function biomeName(biome: Biome) {
@@ -142,20 +255,22 @@
         }
     }
 
-    function playerColor(playerId: number) {
-        if (playerId === 1) return "bg-[#1d4e89]";
-        if (playerId === 2) return "bg-[#b94b3f]";
+    function playerColor(targetPlayerId: number) {
+        if (targetPlayerId === 1) return "bg-[#1d4e89]";
+        if (targetPlayerId === 2) return "bg-[#b94b3f]";
         return "bg-[#6b4a2f]";
     }
 
     function handleBuild(action: "outpost" | "city", x: number, y: number) {
-        debugLog("build.send", {
+        debugLog("gameview.build.received_from_board", {
             action,
             x,
             y,
             playerId,
             currentPlayer: game.CurrentPlayer,
             currentPhase: game.CurrentPhase,
+            selectedBuildAction,
+            resources: me?.Resources,
         });
 
         onBuild(action, x, y);
@@ -421,29 +536,24 @@
                                 <HandCard item={player.Hand} size="sm" />
                             </div>
 
-                            <div
-                                class="mt-3 grid grid-cols-3 gap-2 text-center text-xs font-black"
-                            >
-                                <div
-                                    class="rounded-xl bg-[#5b9368]/35 px-2 py-2"
-                                    title="Wood"
-                                >
-                                    W<br />{resourceAmount(player, 1)}
-                                </div>
+                            <div class="mt-3 flex flex-wrap gap-2">
+                                <ResourceIcon
+                                    resource="wood"
+                                    amount={resourceAmount(player, 1)}
+                                    pulse={resourcePulse(player.Id, 1)}
+                                />
 
-                                <div
-                                    class="rounded-xl bg-[#a8adb2]/35 px-2 py-2"
-                                    title="Stone"
-                                >
-                                    S<br />{resourceAmount(player, 2)}
-                                </div>
+                                <ResourceIcon
+                                    resource="stone"
+                                    amount={resourceAmount(player, 2)}
+                                    pulse={resourcePulse(player.Id, 2)}
+                                />
 
-                                <div
-                                    class="rounded-xl bg-[#d9b56a]/35 px-2 py-2"
-                                    title="Grain"
-                                >
-                                    G<br />{resourceAmount(player, 3)}
-                                </div>
+                                <ResourceIcon
+                                    resource="grain"
+                                    amount={resourceAmount(player, 3)}
+                                    pulse={resourcePulse(player.Id, 3)}
+                                />
                             </div>
                         </div>
                     {/each}
@@ -462,6 +572,47 @@
         />
 
         <aside class="space-y-5">
+            {#if hasMyResourceGain}
+                <section
+                    class="resource-toast rounded-3xl bg-[#73c4bd] p-4 text-[#102b38] shadow-md ring-1 ring-white/20"
+                >
+                    <div
+                        class="text-xs font-black uppercase tracking-wider opacity-70"
+                    >
+                        Gained
+                    </div>
+
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        {#if myWoodGain > 0}
+                            <ResourceIcon
+                                resource="wood"
+                                amount={`+${myWoodGain}`}
+                                size="md"
+                                pulse
+                            />
+                        {/if}
+
+                        {#if myStoneGain > 0}
+                            <ResourceIcon
+                                resource="stone"
+                                amount={`+${myStoneGain}`}
+                                size="md"
+                                pulse
+                            />
+                        {/if}
+
+                        {#if myGrainGain > 0}
+                            <ResourceIcon
+                                resource="grain"
+                                amount={`+${myGrainGain}`}
+                                size="md"
+                                pulse
+                            />
+                        {/if}
+                    </div>
+                </section>
+            {/if}
+
             {#if isMyTurn && game.CurrentPhase !== GamePhase.Pick}
                 <section
                     class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
@@ -512,14 +663,20 @@
                         <div class="mt-4 grid grid-cols-2 gap-3">
                             <button
                                 class={[
-                                    "cursor-pointer rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0",
                                     selectedBuildAction === "outpost"
                                         ? "bg-[#f2c36b] text-[#142833]"
                                         : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
+                                    canSelectOutpost
+                                        ? "cursor-pointer"
+                                        : "cursor-not-allowed",
                                 ].join(" ")}
                                 type="button"
-                                title="Build Outpost"
+                                title={outpostTitle}
+                                disabled={!canSelectOutpost}
                                 on:click={() => {
+                                    if (!canSelectOutpost) return;
+
                                     selectedBuildAction = "outpost";
                                     debugLog("build.select", {
                                         action: "outpost",
@@ -536,18 +693,32 @@
                                 >
                                     Outpost
                                 </div>
+
+                                <div class="mt-3">
+                                    <CostBadge
+                                        wood={2}
+                                        stone={1}
+                                        affordable={canSelectOutpost}
+                                    />
+                                </div>
                             </button>
 
                             <button
                                 class={[
-                                    "cursor-pointer rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0",
                                     selectedBuildAction === "city"
                                         ? "bg-[#f2c36b] text-[#142833]"
                                         : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
+                                    canSelectCity
+                                        ? "cursor-pointer"
+                                        : "cursor-not-allowed",
                                 ].join(" ")}
                                 type="button"
-                                title="Upgrade City"
+                                title={cityTitle}
+                                disabled={!canSelectCity}
                                 on:click={() => {
+                                    if (!canSelectCity) return;
+
                                     selectedBuildAction = "city";
                                     debugLog("build.select", {
                                         action: "city",
@@ -563,6 +734,14 @@
                                     class="mt-1 text-xs uppercase tracking-wider"
                                 >
                                     City
+                                </div>
+
+                                <div class="mt-3">
+                                    <CostBadge
+                                        stone={3}
+                                        grain={2}
+                                        affordable={canSelectCity}
+                                    />
                                 </div>
                             </button>
                         </div>
@@ -619,5 +798,21 @@
             transparent 1px
         );
         background-size: 28px 28px;
+    }
+
+    .resource-toast {
+        animation: toast-in 700ms ease-out;
+    }
+
+    @keyframes toast-in {
+        0% {
+            transform: translateY(-8px);
+            opacity: 0;
+        }
+
+        100% {
+            transform: translateY(0);
+            opacity: 1;
+        }
     }
 </style>

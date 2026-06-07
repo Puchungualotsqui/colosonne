@@ -21,15 +21,6 @@
         game.CurrentPhase === GamePhase.Pick &&
         game.CurrentPlayer === playerId;
 
-    $: debugLog("market.state", {
-        role,
-        playerId,
-        currentPlayer: game.CurrentPlayer,
-        currentPhase: game.CurrentPhase,
-        canPick,
-        marketCount: game.Market.length,
-    });
-
     function biomeName(biome: Biome) {
         switch (biome) {
             case Biome.Forest:

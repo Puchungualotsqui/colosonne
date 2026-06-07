@@ -251,7 +251,18 @@
         onPlaceTile={(x, y) => socket?.send("place_tile", { x, y })}
         onUseDraft={(x, y) => socket?.send("use_draft", { x, y })}
         onPassPlace={() => socket?.send("pass_place", {})}
-        onBuild={(action, x, y) => socket?.send("build", { action, x, y })}
+        onBuild={(action, x, y) => {
+            debugLog("app.build.send", {
+                action,
+                x,
+                y,
+                roomId,
+                playerId,
+                role,
+            });
+
+            socket?.send("build", { action, x, y });
+        }}
         onPassBuild={() =>
             socket?.send("build", { action: "pass", x: 0, y: 0 })}
         onLeaveRoom={leaveRoom}

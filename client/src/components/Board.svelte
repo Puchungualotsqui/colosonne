@@ -65,19 +65,32 @@
     $: renderHexes = buildRenderHexes(game.Map, candidates);
     $: boardSize = calculateBoardSize(renderHexes);
 
-    $: debugLog("board.state", {
-        role,
-        playerId,
-        currentPlayer: game.CurrentPlayer,
-        currentPhase: game.CurrentPhase,
-        isMyTurn,
-        hand,
-        canPlaceTile,
-        canUseDraft,
-        canBuild,
-        selectedBuildAction,
-        candidatesCount: candidates.length,
-    });
+    let lastBuildDebugKey = "";
+
+    $: {
+        const buildDebugKey = JSON.stringify({
+            canBuild,
+            selectedBuildAction,
+            phase: game.CurrentPhase,
+            currentPlayer: game.CurrentPlayer,
+            playerId,
+            resources: me?.Resources,
+            targets: game.Map.filter((tile) => isValidBuildTarget(tile)).map(
+                (tile) => ({
+                    x: tile.X,
+                    y: tile.Y,
+                    biome: tile.Biome,
+                    owner: tile.Owner,
+                    hasOwner: tile.HasOwner,
+                    structure: tile.Structure,
+                }),
+            ),
+        });
+
+        if (canBuild && buildDebugKey !== lastBuildDebugKey) {
+            lastBuildDebugKey = buildDebugKey;
+        }
+    }
 
     function key(x: number, y: number) {
         return `${x},${y}`;
@@ -99,6 +112,22 @@
             left: (x + y / 2) * STEP_X,
             top: y * STEP_Y,
         };
+    }
+
+    function handleHexPointerDown(hex: RenderHex) {
+        debugLog("board.hex.pointerdown", {
+            x: hex.x,
+            y: hex.y,
+            isClickable: isClickable(hex),
+            canBuild,
+            selectedBuildAction,
+            isValidBuildTarget: hex.tile ? isValidBuildTarget(hex.tile) : false,
+            tile: hex.tile,
+        });
+
+        if (!isClickable(hex)) return;
+
+        handleHexClick(hex);
     }
 
     function placementCandidates(map: Tile[]): Coord[] {
@@ -262,6 +291,62 @@
         return `P${tile.Owner}`;
     }
 
+    function playerResource(resourceId: number) {
+        return me?.Resources?.[resourceId] ?? 0;
+    }
+
+    function canPayOutpost() {
+        // Outpost cost: 2 Wood, 1 Stone
+        return playerResource(1) >= 2 && playerResource(2) >= 1;
+    }
+
+    function canPayCity() {
+        // City cost: 3 Stone, 2 Grain
+        return playerResource(2) >= 3 && playerResource(3) >= 2;
+    }
+
+    function isValidOutpostTarget(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        if (!canPayOutpost()) return false;
+
+        if (tile.Biome === Biome.River) return false;
+
+        if (tile.Structure !== Structure.None) return false;
+
+        if (tile.HasOwner && tile.Owner !== playerId) return false;
+
+        return true;
+    }
+
+    function isValidCityTarget(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        if (!canPayCity()) return false;
+
+        if (tile.Biome !== Biome.Plain) return false;
+
+        if (tile.Structure !== Structure.Outpost) return false;
+
+        if (tile.StructureOwner !== playerId) return false;
+
+        return true;
+    }
+
+    function isValidBuildTarget(tile: Tile | undefined) {
+        if (!canBuild || !selectedBuildAction) return false;
+
+        if (selectedBuildAction === "outpost") {
+            return isValidOutpostTarget(tile);
+        }
+
+        if (selectedBuildAction === "city") {
+            return isValidCityTarget(tile);
+        }
+
+        return false;
+    }
+
     function tileTooltip(tile: Tile | undefined, candidate: boolean) {
         if (candidate) {
             return "Empty frontier hex";
@@ -269,6 +354,49 @@
 
         if (!tile) {
             return "";
+        }
+
+        if (canBuild && selectedBuildAction === "outpost") {
+            if (isValidOutpostTarget(tile)) {
+                return "Build Outpost";
+            }
+
+            if (!canPayOutpost()) {
+                return "Need 2 Wood and 1 Stone";
+            }
+
+            if (tile.Biome === Biome.River) {
+                return "Cannot build outpost on river";
+            }
+
+            if (tile.Structure !== Structure.None) {
+                return "Tile already has a structure";
+            }
+
+            if (tile.HasOwner && tile.Owner !== playerId) {
+                return "Enemy controlled tile";
+            }
+        }
+
+        if (canBuild && selectedBuildAction === "city") {
+            if (isValidCityTarget(tile)) {
+                return "Upgrade to City";
+            }
+
+            if (!canPayCity()) {
+                return "Need 3 Stone and 2 Grain";
+            }
+
+            if (tile.Biome !== Biome.Plain) {
+                return "City requires plain";
+            }
+
+            if (
+                tile.Structure !== Structure.Outpost ||
+                tile.StructureOwner !== playerId
+            ) {
+                return "Requires your outpost";
+            }
         }
 
         const owner = tile.HasOwner ? `P${tile.Owner}` : "Open";
@@ -291,11 +419,14 @@
             currentPlayer: game.CurrentPlayer,
             currentPhase: game.CurrentPhase,
             isMyTurn,
-            hand,
+            selectedBuildAction,
+            canBuild,
             canPlaceTile,
             canUseDraft,
-            canBuild,
-            selectedBuildAction,
+            isClickable: isClickable(hex),
+            isValidBuildTarget: hex.tile ? isValidBuildTarget(hex.tile) : false,
+            resources: me?.Resources,
+            tile: hex.tile,
         });
 
         if (hex.candidate && canPlaceTile) {
@@ -321,6 +452,20 @@
         }
 
         if (canBuild && selectedBuildAction) {
+            if (!isValidBuildTarget(hex.tile)) {
+                debugLog("board.build.invalid_target", {
+                    action: selectedBuildAction,
+                    x: hex.tile.X,
+                    y: hex.tile.Y,
+                    tile: hex.tile,
+                    wood: playerResource(1),
+                    stone: playerResource(2),
+                    grain: playerResource(3),
+                });
+
+                return;
+            }
+
             debugLog("board.build.send", {
                 action: selectedBuildAction,
                 x: hex.tile.X,
@@ -334,7 +479,7 @@
     function isClickable(hex: RenderHex) {
         if (hex.candidate && canPlaceTile) return true;
         if (hex.tile && canUseDraft) return true;
-        if (hex.tile && canBuild) return true;
+        if (hex.tile && canBuild && isValidBuildTarget(hex.tile)) return true;
         return false;
     }
 </script>
@@ -369,12 +514,21 @@
                                 ? "cursor-pointer hover:-translate-y-1 hover:brightness-110"
                                 : "cursor-default",
                             hex.candidate ? "border-dashed opacity-80" : "",
+                            hex.tile && isValidBuildTarget(hex.tile)
+                                ? "build-target"
+                                : "",
+                            canBuild &&
+                            hex.tile &&
+                            !isValidBuildTarget(hex.tile)
+                                ? "opacity-55"
+                                : "",
                         ].join(" ")}
                         style={`left: ${hex.left}px; top: ${hex.top}px; width: ${HEX_W}px; height: ${HEX_H}px;`}
                         type="button"
-                        disabled={!isClickable(hex)}
+                        aria-disabled={!isClickable(hex)}
                         aria-label={tileTooltip(hex.tile, hex.candidate)}
-                        on:click={() => handleHexClick(hex)}
+                        on:pointerdown|preventDefault={() =>
+                            handleHexPointerDown(hex)}
                     >
                         <div
                             class="pointer-events-none absolute inset-[5px] clip-hex border border-white/25"
@@ -430,5 +584,9 @@
             6.7% 75%,
             6.7% 25%
         );
+    }
+    .build-target {
+        filter: drop-shadow(0 0 0.35rem #f2c36b)
+            drop-shadow(0 0 0.55rem #f2c36b);
     }
 </style>
