@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+
 	"webGameGo/engine"
 )
 
@@ -25,13 +26,20 @@ type PickPayload struct {
 }
 
 type PlaceTilePayload struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+	HandIndex int `json:"handIndex"`
+	X         int `json:"x"`
+	Y         int `json:"y"`
 }
 
 type UseDraftPayload struct {
-	X int `json:"x"`
-	Y int `json:"y"`
+	HandIndex      int             `json:"handIndex"`
+	X              int             `json:"x"`
+	Y              int             `json:"y"`
+	TargetPlayerID engine.PlayerId `json:"targetPlayerId"`
+}
+
+type DiscardDraftPayload struct {
+	HandIndex int `json:"handIndex"`
 }
 
 type BuildPayload struct {

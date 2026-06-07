@@ -3,6 +3,8 @@ package server
 import (
 	"errors"
 	"log"
+	"math/rand"
+	"time"
 )
 
 func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
@@ -85,7 +87,9 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 			c.Name = payload.Name
 		}
 
-		room.AddSpectator(c)
+		if err := room.AddSpectator(c); err != nil {
+			return err
+		}
 
 		c.Send <- ServerMessage{
 			Type: "room_spectating",
@@ -128,19 +132,22 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		)
 
 		err = room.Game.PickMarketItem(c.PlayerID, payload.MarketIndex)
+
+		if err == nil {
+			log.Printf(
+				"[cmd:pick:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
+				room.ID,
+				c.PlayerID,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+			)
+		}
+
 		room.mu.Unlock()
 
 		if err != nil {
 			return err
 		}
-
-		log.Printf(
-			"[cmd:pick:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
-			room.ID,
-			c.PlayerID,
-			room.Game.CurrentPhase,
-			room.Game.CurrentPlayer,
-		)
 
 		room.BroadcastState()
 		return nil
@@ -163,30 +170,34 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		room.mu.Lock()
 
 		log.Printf(
-			"[cmd:place_tile] room=%s player=%d x=%d y=%d phase=%d currentPlayer=%d",
+			"[cmd:place_tile] room=%s player=%d handIndex=%d x=%d y=%d phase=%d currentPlayer=%d",
 			room.ID,
 			c.PlayerID,
+			payload.HandIndex,
 			payload.X,
 			payload.Y,
 			room.Game.CurrentPhase,
 			room.Game.CurrentPlayer,
 		)
 
-		err = room.Game.PlaceTile(c.PlayerID, payload.X, payload.Y)
+		err = room.Game.PlaceTileFromHand(c.PlayerID, payload.HandIndex, payload.X, payload.Y)
+
+		if err == nil {
+			log.Printf(
+				"[cmd:place_tile:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d tiles=%d",
+				room.ID,
+				c.PlayerID,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+				len(room.Game.Map),
+			)
+		}
+
 		room.mu.Unlock()
 
 		if err != nil {
 			return err
 		}
-
-		log.Printf(
-			"[cmd:place_tile:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d tiles=%d",
-			room.ID,
-			c.PlayerID,
-			room.Game.CurrentPhase,
-			room.Game.CurrentPlayer,
-			len(room.Game.Map),
-		)
 
 		room.BroadcastState()
 		return nil
@@ -207,7 +218,89 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		}
 
 		room.mu.Lock()
-		err = room.Game.BuildOrUseDraft(c.PlayerID, payload.X, payload.Y)
+
+		if room.RNG == nil {
+			room.RNG = rand.New(rand.NewSource(time.Now().UnixNano()))
+		}
+
+		log.Printf(
+			"[cmd:use_draft] room=%s player=%d handIndex=%d x=%d y=%d target=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			payload.HandIndex,
+			payload.X,
+			payload.Y,
+			payload.TargetPlayerID,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
+		err = room.Game.UseDraftItem(
+			c.PlayerID,
+			payload.HandIndex,
+			payload.X,
+			payload.Y,
+			payload.TargetPlayerID,
+			room.RNG,
+		)
+
+		if err == nil {
+			log.Printf(
+				"[cmd:use_draft:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
+				room.ID,
+				c.PlayerID,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+			)
+		}
+
+		room.mu.Unlock()
+
+		if err != nil {
+			return err
+		}
+
+		room.BroadcastState()
+		return nil
+
+	case "discard_draft":
+		room, err := s.requireRoom(c)
+		if err != nil {
+			return err
+		}
+
+		if c.Role != "player" {
+			return errors.New("spectators cannot perform game actions")
+		}
+
+		payload, err := decodeData[DiscardDraftPayload](msg.Data)
+		if err != nil {
+			return err
+		}
+
+		room.mu.Lock()
+
+		log.Printf(
+			"[cmd:discard_draft] room=%s player=%d handIndex=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			payload.HandIndex,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
+		err = room.Game.DiscardDraftItem(c.PlayerID, payload.HandIndex)
+
+		if err == nil {
+			log.Printf(
+				"[cmd:discard_draft:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
+				room.ID,
+				c.PlayerID,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+			)
+		}
+
 		room.mu.Unlock()
 
 		if err != nil {
@@ -228,18 +321,30 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		}
 
 		room.mu.Lock()
-		err = room.Game.PassPlace(c.PlayerID)
-		room.mu.Unlock()
 
-		if err != nil {
+		log.Printf(
+			"[cmd:pass_place] room=%s player=%d phase=%d currentPlayer=%d",
+			room.ID,
+			c.PlayerID,
+			room.Game.CurrentPhase,
+			room.Game.CurrentPlayer,
+		)
+
+		err = room.Game.PassPlace(c.PlayerID)
+
+		if err == nil {
 			log.Printf(
-				"[cmd:pass_place:error] room=%s player=%d phase=%d currentPlayer=%d err=%v",
+				"[cmd:pass_place:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
 				room.ID,
 				c.PlayerID,
 				room.Game.CurrentPhase,
 				room.Game.CurrentPlayer,
-				err,
 			)
+		}
+
+		room.mu.Unlock()
+
+		if err != nil {
 			return err
 		}
 
@@ -277,38 +382,45 @@ func (s *WebSocketServer) handleMessage(c *Client, msg ClientMessage) error {
 		switch payload.Action {
 		case "outpost":
 			err = room.Game.BuildOutpost(c.PlayerID, payload.X, payload.Y)
+
+		case "settlement":
+			err = room.Game.BuildSettlement(c.PlayerID, payload.X, payload.Y)
+
 		case "city":
 			err = room.Game.UpgradeCity(c.PlayerID, payload.X, payload.Y)
+
+		case "blockade":
+			err = room.Game.BuildBlockade(c.PlayerID, payload.X, payload.Y)
+
+		case "floodworks", "buy_floodworks":
+			err = room.Game.BuyFloodworks(c.PlayerID)
+
+		case "flood", "use_flood_token":
+			err = room.Game.UseFloodToken(c.PlayerID, payload.X, payload.Y)
+
 		case "pass":
 			err = room.Game.PassBuild(c.PlayerID)
+
 		default:
 			err = errors.New("unknown build action")
+		}
+
+		if err == nil {
+			log.Printf(
+				"[cmd:build:ok] room=%s player=%d action=%s newPhase=%d newCurrentPlayer=%d",
+				room.ID,
+				c.PlayerID,
+				payload.Action,
+				room.Game.CurrentPhase,
+				room.Game.CurrentPlayer,
+			)
 		}
 
 		room.mu.Unlock()
 
 		if err != nil {
-			log.Printf(
-				"[cmd:build:error] room=%s player=%d action=%s x=%d y=%d phase=%d currentPlayer=%d err=%v",
-				room.ID,
-				c.PlayerID,
-				payload.Action,
-				payload.X,
-				payload.Y,
-				room.Game.CurrentPhase,
-				room.Game.CurrentPlayer,
-				err,
-			)
 			return err
 		}
-
-		log.Printf(
-			"[cmd:build:ok] room=%s player=%d newPhase=%d newCurrentPlayer=%d",
-			room.ID,
-			c.PlayerID,
-			room.Game.CurrentPhase,
-			room.Game.CurrentPlayer,
-		)
 
 		room.BroadcastState()
 		return nil

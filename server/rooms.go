@@ -75,6 +75,7 @@ type Room struct {
 	Game     *engine.GameState
 	Settings RoomSettings
 	HostID   string
+	RNG      *rand.Rand
 
 	Clients    map[engine.PlayerId]*Client
 	Spectators map[string]*Client
@@ -109,6 +110,7 @@ func (rm *RoomManager) CreateRoom() *Room {
 			Spectators: true,
 		},
 		HostID:     "",
+		RNG:        rand.New(rand.NewSource(time.Now().UnixNano())),
 		Clients:    make(map[engine.PlayerId]*Client),
 		Spectators: make(map[string]*Client),
 		Ready:      make(map[engine.PlayerId]bool),
@@ -134,13 +136,10 @@ func (r *Room) AddClient(c *Client) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	if r.Status != RoomStatusLobby {
-		return errors.New("game already started")
-	}
-
 	c.RoomID = r.ID
 
 	// Same session reconnecting/rejoining: return existing player seat.
+	// This is checked before rejecting non-lobby joins.
 	for playerID, existing := range r.Clients {
 		if existing.SessionID != "" && existing.SessionID == c.SessionID {
 			c.RoomID = r.ID
@@ -182,15 +181,20 @@ func (r *Room) AddClient(c *Client) error {
 			_ = existing.Conn.Close()
 
 			log.Printf(
-				"[room:%s] add spectator client=%s session=%s name=%s",
+				"[room:%s] reconnect spectator client=%s oldClient=%s session=%s name=%s",
 				r.ID,
 				c.ID,
+				existing.ID,
 				c.SessionID,
 				c.Name,
 			)
 
 			return nil
 		}
+	}
+
+	if r.Status != RoomStatusLobby {
+		return errors.New("game already started")
 	}
 
 	if len(r.Clients) < r.Settings.MaxPlayers {
@@ -231,18 +235,40 @@ func (r *Room) AddClient(c *Client) error {
 	c.Role = "spectator"
 	r.Spectators[c.ID] = c
 
+	log.Printf(
+		"[room:%s] add spectator client=%s session=%s name=%s",
+		r.ID,
+		c.ID,
+		c.SessionID,
+		c.Name,
+	)
+
 	return nil
 }
 
-func (r *Room) AddSpectator(c *Client) {
+func (r *Room) AddSpectator(c *Client) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+
+	if !r.Settings.Spectators {
+		return errors.New("spectators are disabled")
+	}
 
 	c.RoomID = r.ID
 	c.PlayerID = 0
 	c.Role = "spectator"
 
 	r.Spectators[c.ID] = c
+
+	log.Printf(
+		"[room:%s] add spectator client=%s session=%s name=%s",
+		r.ID,
+		c.ID,
+		c.SessionID,
+		c.Name,
+	)
+
+	return nil
 }
 
 func (r *Room) RemoveClient(c *Client) {
@@ -461,12 +487,16 @@ func (r *Room) StartGame(c *Client) error {
 		return err
 	}
 
+	if r.RNG == nil {
+		r.RNG = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+
 	players := make([]engine.Player, 0, len(r.Clients))
 	for playerID := range r.Clients {
 		players = append(players, engine.Player{Id: playerID})
 	}
 
-	r.Game = engine.NewGameState(players, rand.New(rand.NewSource(time.Now().UnixNano())))
+	r.Game = engine.NewGameState(players, r.RNG)
 	r.Status = RoomStatusPlaying
 
 	log.Printf(
@@ -500,28 +530,21 @@ func (r *Room) Kick(c *Client, targetPlayerID engine.PlayerId) error {
 		return errors.New("host cannot kick themselves")
 	}
 
-	// Remove from the room first.
 	delete(r.Clients, targetPlayerID)
 	delete(r.Ready, targetPlayerID)
 
 	r.promoteHostLocked()
 
-	// Mark the target as no longer in a room.
-	// This prevents the kicked client from sending lobby/game commands
-	// even if their websocket remains briefly open.
 	target.RoomID = ""
 	target.PlayerID = 0
 	target.Role = ""
 
-	// Tell the kicked client. Do not close the socket here.
-	// The frontend will receive this and call leaveRoom().
 	select {
 	case target.Send <- ServerMessage{
 		Type: "kicked",
 		Data: "you were kicked from the room",
 	}:
 	default:
-		// If the socket is already unhealthy, ignore.
 	}
 
 	return nil
