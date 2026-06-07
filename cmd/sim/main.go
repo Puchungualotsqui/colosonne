@@ -21,15 +21,18 @@ func main() {
 
 	gs := engine.NewGameState(players, rng)
 
-	// Friendly opening market so the first round is playable.
-	// After these are picked, the normal random deck refills the market.
+	// Friendly opening market.
+	// 2 players * 3 cards each, plus a few tactical cards.
 	gs.Market = []engine.DraftItem{
 		{Kind: engine.DraftTile, Biome: engine.Forest},
 		{Kind: engine.DraftTile, Biome: engine.Mountain},
 		{Kind: engine.DraftTile, Biome: engine.Plain},
-		{Kind: engine.DraftTile, Biome: engine.River},
+		{Kind: engine.DraftTile, Biome: engine.CrystalField},
+		{Kind: engine.DraftTile, Biome: engine.Forest},
+		{Kind: engine.DraftTile, Biome: engine.Mountain},
 		{Kind: engine.DraftAction, Action: engine.Expansion},
-		{Kind: engine.DraftUpgrade},
+		{Kind: engine.DraftAction, Action: engine.Raid},
+		{Kind: engine.DraftStructure, Structure: engine.Watchtower},
 	}
 
 	reader := bufio.NewReader(os.Stdin)
@@ -46,7 +49,7 @@ func main() {
 			handlePick(reader, gs)
 
 		case engine.PhasePlace:
-			handlePlace(reader, gs)
+			handlePlace(reader, gs, rng)
 
 		case engine.PhaseBuild:
 			handleBuild(reader, gs)
@@ -60,8 +63,14 @@ func main() {
 
 func handlePick(reader *bufio.Reader, gs *engine.GameState) {
 	playerId := gs.CurrentPlayer
+	player := mustPlayer(gs, playerId)
 
-	fmt.Printf("\nPlayer %d, pick one market item.\n", playerId)
+	fmt.Printf("\nPlayer %d, pick a market item. Cards drafted: %d/%d\n",
+		playerId,
+		len(player.Hand),
+		gs.CardsPerPlayerPerRound(),
+	)
+
 	printMarket(gs)
 
 	for {
@@ -77,90 +86,124 @@ func handlePick(reader *bufio.Reader, gs *engine.GameState) {
 	}
 }
 
-func handlePlace(reader *bufio.Reader, gs *engine.GameState) {
+func handlePlace(reader *bufio.Reader, gs *engine.GameState, rng *rand.Rand) {
 	playerId := gs.CurrentPlayer
 	player := mustPlayer(gs, playerId)
 
-	fmt.Printf("\nPlayer %d, use your drafted item.\n", playerId)
+	fmt.Printf("\nPlayer %d, use your drafted cards.\n", playerId)
 
-	if player.Hand == nil {
-		fmt.Println("No item in hand. Passing place phase.")
+	if len(player.Hand) == 0 {
+		fmt.Println("No cards in hand. Passing place phase.")
 		_ = gs.PassPlace(playerId)
 		return
 	}
 
-	fmt.Println("Hand:", describeDraftItem(*player.Hand))
+	printHand(player)
 
-	switch player.Hand.Kind {
-	case engine.DraftTile:
-		for {
-			fmt.Println("Place tile, or type 'p' to discard/pass.")
-			x, y, pass := askCoordsOrPass(reader)
+	for {
+		fmt.Println("\nChoose a hand index to use.")
+		fmt.Println("Type 'p' to pass if no card has a valid use.")
+		fmt.Println("Type 'd <index>' to discard a specific unusable card.")
 
-			if pass {
-				_ = gs.PassPlace(playerId)
-				return
+		line := askLine(reader, "Command: ")
+		parts := strings.Fields(line)
+
+		if len(parts) == 0 {
+			continue
+		}
+
+		if parts[0] == "p" || parts[0] == "pass" {
+			err := gs.PassPlace(playerId)
+			if err != nil {
+				fmt.Println("Cannot pass:", err)
+				continue
+			}
+			return
+		}
+
+		if parts[0] == "d" || parts[0] == "discard" {
+			if len(parts) != 2 {
+				fmt.Println("Usage: d <handIndex>")
+				continue
 			}
 
-			err := gs.PlaceTile(playerId, x, y)
+			index, err := strconv.Atoi(parts[1])
 			if err != nil {
-				fmt.Println("Could not place tile:", err)
+				fmt.Println("Hand index must be a number.")
+				continue
+			}
+
+			err = gs.DiscardDraftItem(playerId, index)
+			if err != nil {
+				fmt.Println("Cannot discard:", err)
 				continue
 			}
 
 			return
 		}
+
+		handIndex, err := strconv.Atoi(parts[0])
+		if err != nil {
+			fmt.Println("Enter a hand index, p, or d <index>.")
+			continue
+		}
+
+		player = mustPlayer(gs, playerId)
+		if handIndex < 0 || handIndex >= len(player.Hand) {
+			fmt.Println("Invalid hand index.")
+			continue
+		}
+
+		item := player.Hand[handIndex]
+		err = useHandItem(reader, gs, rng, playerId, handIndex, item)
+		if err != nil {
+			fmt.Println("Could not use card:", err)
+			continue
+		}
+
+		return
+	}
+}
+
+func useHandItem(
+	reader *bufio.Reader,
+	gs *engine.GameState,
+	rng *rand.Rand,
+	playerId engine.PlayerId,
+	handIndex int,
+	item engine.DraftItem,
+) error {
+	switch item.Kind {
+	case engine.DraftTile:
+		x, y := askCoords(reader)
+		return gs.PlaceTileFromHand(playerId, handIndex, x, y)
+
+	case engine.DraftStructure:
+		x, y := askCoords(reader)
+		return gs.UseDraftItem(playerId, handIndex, x, y, 0, rng)
 
 	case engine.DraftAction:
-		if player.Hand.Action == engine.Expansion {
-			err := gs.BuildOrUseDraft(playerId, 0, 0)
-			if err != nil {
-				fmt.Println("Could not use Expansion:", err)
-				_ = gs.PassPlace(playerId)
-			}
-			return
+		switch item.Action {
+		case engine.Expansion:
+			return gs.UseDraftItem(playerId, handIndex, 0, 0, 0, rng)
+
+		case engine.Raid:
+			target := engine.PlayerId(askInt(reader, "Target player ID: "))
+			return gs.UseDraftItem(playerId, handIndex, 0, 0, target, rng)
+
+		case engine.Harvest, engine.Reinforce:
+			x, y := askCoords(reader)
+			return gs.UseDraftItem(playerId, handIndex, x, y, 0, rng)
+
+		default:
+			return fmt.Errorf("unknown action")
 		}
 
-		for {
-			fmt.Println("Use action on a tile, or type 'p' to discard/pass.")
-			x, y, pass := askCoordsOrPass(reader)
-
-			if pass {
-				_ = gs.PassPlace(playerId)
-				return
-			}
-
-			err := gs.BuildOrUseDraft(playerId, x, y)
-			if err != nil {
-				fmt.Println("Could not use action:", err)
-				continue
-			}
-
-			return
-		}
-
-	case engine.DraftUpgrade, engine.DraftStructure:
-		for {
-			fmt.Println("Use drafted item on a tile, or type 'p' to discard/pass.")
-			x, y, pass := askCoordsOrPass(reader)
-
-			if pass {
-				_ = gs.PassPlace(playerId)
-				return
-			}
-
-			err := gs.BuildOrUseDraft(playerId, x, y)
-			if err != nil {
-				fmt.Println("Could not use drafted item:", err)
-				continue
-			}
-
-			return
-		}
+	case engine.DraftUpgrade:
+		return gs.DiscardDraftItem(playerId, handIndex)
 
 	default:
-		fmt.Println("Unknown hand item. Passing.")
-		_ = gs.PassPlace(playerId)
+		return fmt.Errorf("unknown draft item")
 	}
 }
 
@@ -169,8 +212,12 @@ func handleBuild(reader *bufio.Reader, gs *engine.GameState) {
 
 	fmt.Printf("\nPlayer %d, build phase.\n", playerId)
 	fmt.Println("1. Build Outpost")
-	fmt.Println("2. Upgrade Outpost to City")
-	fmt.Println("3. Pass")
+	fmt.Println("2. Build Settlement")
+	fmt.Println("3. Upgrade Outpost to City")
+	fmt.Println("4. Build Blockade")
+	fmt.Println("5. Buy Floodworks")
+	fmt.Println("6. Use Flood Token")
+	fmt.Println("7. Pass")
 
 	for {
 		choice := askInt(reader, "Choice: ")
@@ -187,6 +234,15 @@ func handleBuild(reader *bufio.Reader, gs *engine.GameState) {
 
 		case 2:
 			x, y := askCoords(reader)
+			err := gs.BuildSettlement(playerId, x, y)
+			if err != nil {
+				fmt.Println("Could not build settlement:", err)
+				continue
+			}
+			return
+
+		case 3:
+			x, y := askCoords(reader)
 			err := gs.UpgradeCity(playerId, x, y)
 			if err != nil {
 				fmt.Println("Could not upgrade city:", err)
@@ -194,7 +250,35 @@ func handleBuild(reader *bufio.Reader, gs *engine.GameState) {
 			}
 			return
 
-		case 3:
+		case 4:
+			x, y := askCoords(reader)
+			err := gs.BuildBlockade(playerId, x, y)
+			if err != nil {
+				fmt.Println("Could not build blockade:", err)
+				continue
+			}
+			return
+
+		case 5:
+			err := gs.BuyFloodworks(playerId)
+			if err != nil {
+				fmt.Println("Could not buy Floodworks:", err)
+				continue
+			}
+			return
+
+		case 6:
+			x, y := askCoords(reader)
+			err := gs.UseFloodToken(playerId, x, y)
+			if err != nil {
+				fmt.Println("Could not use Flood Token:", err)
+				continue
+			}
+
+			fmt.Println("Flood Token used. You may still perform your build action.")
+			printState(gs)
+
+		case 7:
 			err := gs.PassBuild(playerId)
 			if err != nil {
 				fmt.Println("Could not pass:", err)
@@ -237,20 +321,31 @@ func printPlayers(gs *engine.GameState) {
 	fmt.Println("\nPlayers:")
 
 	for _, p := range gs.Players {
-		hand := "empty"
-		if p.Hand != nil {
-			hand = describeDraftItem(*p.Hand)
-		}
-
 		fmt.Printf(
-			"  Player %d | VP:%d | Hand:%s | Wood:%d Stone:%d Grain:%d\n",
+			"  Player %d | VP:%d | Wood:%d Stone:%d Grain:%d Crystal:%d | Flood:%d | Floodworks:%d\n",
 			p.Id,
 			gs.VictoryPoints(p.Id),
-			hand,
 			p.Resources[engine.Wood],
 			p.Resources[engine.Stone],
 			p.Resources[engine.Grain],
+			p.Resources[engine.Crystal],
+			p.FloodTokens,
+			p.FloodworksBought,
 		)
+
+		printHand(&p)
+	}
+}
+
+func printHand(p *engine.Player) {
+	if len(p.Hand) == 0 {
+		fmt.Println("    Hand: empty")
+		return
+	}
+
+	fmt.Println("    Hand:")
+	for i, item := range p.Hand {
+		fmt.Printf("      [%d] %s\n", i, describeDraftItem(item))
 	}
 }
 
@@ -280,8 +375,13 @@ func printMap(gs *engine.GameState) {
 			}
 		}
 
+		blockade := "-"
+		if t.HasBlockade {
+			blockade = fmt.Sprintf("P%d", t.BlockadeOwner)
+		}
+
 		fmt.Printf(
-			"  (%2d,%2d) %-8s | Owner:%-4s | Structure:%-10s Owner:%d %-8s | Upgrade:%d | Influence:%v Temp:%v\n",
+			"  (%2d,%2d) %-12s | Owner:%-4s | Structure:%-10s Owner:%d %-8s | Blockade:%-3s | Influence:%v Temp:%v\n",
 			t.X,
 			t.Y,
 			describeBiome(t.Biome),
@@ -289,7 +389,7 @@ func printMap(gs *engine.GameState) {
 			describeStructure(t.Structure),
 			t.StructureOwner,
 			active,
-			t.UpgradeLevel,
+			blockade,
 			t.Influence,
 			t.TempInfluence,
 		)
@@ -321,17 +421,21 @@ func printWinner(gs *engine.GameState) {
 	fmt.Printf("Winner: Player %d with %d victory points.\n", bestPlayer, bestScore)
 }
 
+func askLine(reader *bufio.Reader, prompt string) string {
+	fmt.Print(prompt)
+
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		fmt.Println("Input error:", err)
+		return ""
+	}
+
+	return strings.TrimSpace(line)
+}
+
 func askInt(reader *bufio.Reader, prompt string) int {
 	for {
-		fmt.Print(prompt)
-
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Input error:", err)
-			continue
-		}
-
-		line = strings.TrimSpace(line)
+		line := askLine(reader, prompt)
 
 		value, err := strconv.Atoi(line)
 		if err != nil {
@@ -345,13 +449,7 @@ func askInt(reader *bufio.Reader, prompt string) int {
 
 func askCoords(reader *bufio.Reader) (int, int) {
 	for {
-		fmt.Print("Coordinates x y: ")
-
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Input error:", err)
-			continue
-		}
+		line := askLine(reader, "Coordinates x y: ")
 
 		parts := strings.Fields(line)
 		if len(parts) != 2 {
@@ -369,45 +467,6 @@ func askCoords(reader *bufio.Reader) (int, int) {
 
 		return x, y
 	}
-}
-
-func askCoordsOrPass(reader *bufio.Reader) (int, int, bool) {
-	for {
-		fmt.Print("Coordinates x y, or p: ")
-
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			fmt.Println("Input error:", err)
-			continue
-		}
-
-		line = strings.TrimSpace(line)
-
-		if line == "p" || line == "pass" {
-			return 0, 0, true
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) != 2 {
-			fmt.Println("Enter two numbers, example: 1 0, or p to pass.")
-			continue
-		}
-
-		x, errX := strconv.Atoi(parts[0])
-		y, errY := strconv.Atoi(parts[1])
-
-		if errX != nil || errY != nil {
-			fmt.Println("Coordinates must be numbers.")
-			continue
-		}
-
-		return x, y, false
-	}
-}
-
-func pressEnter(reader *bufio.Reader) {
-	fmt.Print("Press Enter to continue...")
-	_, _ = reader.ReadString('\n')
 }
 
 func mustPlayer(gs *engine.GameState, id engine.PlayerId) *engine.Player {
@@ -441,6 +500,8 @@ func describeBiome(b engine.Biome) string {
 		return "Plain"
 	case engine.River:
 		return "River"
+	case engine.CrystalField:
+		return "CrystalField"
 	case engine.NoneBiome:
 		return "NoneBiome"
 	default:
@@ -456,12 +517,12 @@ func describeStructure(s engine.Structure) string {
 		return "Outpost"
 	case engine.City:
 		return "City"
+	case engine.Settlement:
+		return "Settlement"
 	case engine.Bridge:
 		return "Bridge"
 	case engine.Watchtower:
 		return "Watchtower"
-	case engine.Road:
-		return "Road"
 	default:
 		return "UnknownStructure"
 	}
@@ -473,7 +534,7 @@ func describeDraftItem(item engine.DraftItem) string {
 		return fmt.Sprintf("Tile(%s)", describeBiome(item.Biome))
 
 	case engine.DraftUpgrade:
-		return "Upgrade"
+		return "DeprecatedUpgrade"
 
 	case engine.DraftStructure:
 		return fmt.Sprintf("Structure(%s)", describeStructure(item.Structure))
@@ -494,6 +555,8 @@ func describeAction(a engine.Action) string {
 		return "Reinforce"
 	case engine.Expansion:
 		return "Expansion"
+	case engine.Raid:
+		return "Raid"
 	case engine.NoAction:
 		return "NoAction"
 	default:

@@ -14,12 +14,15 @@ const (
 )
 
 type GameState struct {
-	Players         []Player
-	Map             []Tile
-	Deck            []DraftItem
-	Market          []DraftItem
-	CurrentPlayer   PlayerId
-	CurrentPhase    GamePhase
+	Players []Player
+	Map     []Tile
+
+	Deck   []DraftItem
+	Market []DraftItem
+
+	CurrentPlayer PlayerId
+	CurrentPhase  GamePhase
+
 	RoundFirstIndex int
 	TurnIndex       int
 	Round           uint
@@ -29,25 +32,24 @@ func NewGameState(players []Player, rng *rand.Rand) *GameState {
 	deck := GenerateDraftDeck()
 	ShuffleDraftItems(deck, rng)
 
-	startTile := NewTile(Plain)
-	startTile.X = 0
-	startTile.Y = 0
+	ShufflePlayers(players, rng)
 
 	for i := range players {
-		if players[i].Resources == nil {
-			players[i].Resources = map[Resource]uint{
-				Wood:  2,
-				Stone: 2,
-				Grain: 2,
-			}
+		players[i].ensureResources()
+
+		// One starting Wood means every random home biome can afford
+		// a first Outpost after the first Settlement production.
+		if players[i].Resources[Wood] == 0 &&
+			players[i].Resources[Stone] == 0 &&
+			players[i].Resources[Grain] == 0 &&
+			players[i].Resources[Crystal] == 0 {
+			players[i].Resources[Wood] = 1
 		}
 	}
 
-	ShufflePlayers(players, rng)
-
 	gs := &GameState{
 		Players:         players,
-		Map:             []Tile{startTile},
+		Map:             []Tile{},
 		Deck:            deck,
 		Market:          []DraftItem{},
 		CurrentPhase:    PhasePick,
@@ -56,13 +58,65 @@ func NewGameState(players []Player, rng *rand.Rand) *GameState {
 		Round:           1,
 	}
 
+	gs.createHomeTiles(rng)
 	gs.RefillMarket()
 	gs.beginPhase(PhasePick)
+
 	return gs
 }
 
+func (gs *GameState) createHomeTiles(rng *rand.Rand) {
+	homeBiomes := []Biome{Forest, Mountain, Plain}
+	coords := homeCoordinates(len(gs.Players))
+
+	for i := range gs.Players {
+		playerID := gs.Players[i].Id
+		coord := coords[i]
+
+		biome := homeBiomes[rng.Intn(len(homeBiomes))]
+
+		tile := NewTile(biome)
+		tile.X = coord.x
+		tile.Y = coord.y
+		tile.HasOwner = true
+		tile.Owner = playerID
+		tile.Structure = Settlement
+		tile.StructureOwner = playerID
+
+		gs.Map = append(gs.Map, tile)
+	}
+}
+
+type homeCoord struct {
+	x int
+	y int
+}
+
+func homeCoordinates(playerCount int) []homeCoord {
+	coords := make([]homeCoord, 0, playerCount)
+
+	if playerCount <= 0 {
+		return coords
+	}
+
+	start := -2 * (playerCount - 1)
+
+	for i := range playerCount {
+		coords = append(coords, homeCoord{
+			x: start + i*4,
+			y: 0,
+		})
+	}
+
+	return coords
+}
+
+func (gs *GameState) CardsPerPlayerPerRound() int {
+	return 3
+}
+
 func (gs *GameState) MarketSize() int {
-	return len(gs.Players) + 2
+	return len(gs.Players)*3 + 3
 }
 
 func (gs *GameState) RequiredTileCardsInMarket() int {
@@ -73,14 +127,10 @@ func (gs *GameState) RequiredTileCardsInMarket() int {
 	}
 
 	if gs.Round <= 3 {
-		return playerCount
+		return playerCount * 2
 	}
 
-	if playerCount <= 1 {
-		return 1
-	}
-
-	return playerCount - 1
+	return playerCount
 }
 
 func (gs *GameState) CountTileCardsInMarket() int {
@@ -113,6 +163,7 @@ func (gs *GameState) drawTopFromDeck() (DraftItem, bool) {
 
 	item := gs.Deck[0]
 	gs.Deck = gs.Deck[1:]
+
 	return item, true
 }
 
@@ -138,8 +189,6 @@ func (gs *GameState) RefillMarket() {
 		gs.Market = append(gs.Market, item)
 	}
 
-	// If the top-deck refill accidentally still leaves too few tiles
-	// and there are tiles deeper in the deck, swap non-tiles out.
 	for gs.CountTileCardsInMarket() < requiredTiles {
 		tileItem, ok := gs.drawFirstTileFromDeck()
 		if !ok {
@@ -147,6 +196,7 @@ func (gs *GameState) RefillMarket() {
 		}
 
 		replaced := false
+
 		for i := len(gs.Market) - 1; i >= 0; i-- {
 			if gs.Market[i].Kind != DraftTile {
 				gs.Deck = append(gs.Deck, gs.Market[i])
@@ -168,6 +218,7 @@ func (gs *GameState) PlayerIndex(id PlayerId) (int, error) {
 			return i, nil
 		}
 	}
+
 	return 0, errors.New("player not found")
 }
 
@@ -185,9 +236,11 @@ func (gs *GameState) PlaceOrder() []PlayerId {
 
 func reversePlayerIds(ids []PlayerId) []PlayerId {
 	out := make([]PlayerId, len(ids))
+
 	for i := range ids {
 		out[i] = ids[len(ids)-1-i]
 	}
+
 	return out
 }
 
@@ -209,7 +262,7 @@ func (gs *GameState) beginPhase(phase GamePhase) {
 	case PhasePlace, PhaseBuild:
 		order := gs.PlaceOrder()
 		if len(order) > 0 {
-			gs.CurrentPlayer = order[gs.TurnIndex]
+			gs.CurrentPlayer = order[0]
 		}
 	}
 }
@@ -231,6 +284,11 @@ func (gs *GameState) PhaseCompleted() {
 
 	switch gs.CurrentPhase {
 	case PhasePick:
+		player, err := gs.playerById(gs.CurrentPlayer)
+		if err == nil && len(player.Hand) < gs.CardsPerPlayerPerRound() && len(gs.Market) > 0 {
+			return
+		}
+
 		order := gs.PickOrder()
 
 		if gs.TurnIndex+1 < len(order) {
@@ -242,6 +300,11 @@ func (gs *GameState) PhaseCompleted() {
 		gs.beginPhase(PhasePlace)
 
 	case PhasePlace:
+		player, err := gs.playerById(gs.CurrentPlayer)
+		if err == nil && len(player.Hand) > 0 {
+			return
+		}
+
 		gs.CurrentPhase = PhaseBuild
 
 	case PhaseBuild:
@@ -254,7 +317,6 @@ func (gs *GameState) PhaseCompleted() {
 			return
 		}
 
-		// Recount is automatic and internal.
 		gs.ResolveInfluence()
 		gs.advanceToNextRound()
 	}
@@ -278,16 +340,17 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 		return errors.New("player not found")
 	}
 
-	if gs.Players[playerIndex].Hand != nil {
-		return errors.New("player already has item in hand")
+	if len(gs.Players[playerIndex].Hand) >= gs.CardsPerPlayerPerRound() {
+		return errors.New("player already drafted enough cards this round")
 	}
 
 	item := gs.Market[marketIndex]
-	gs.Players[playerIndex].Hand = &item
+	gs.Players[playerIndex].Hand = append(gs.Players[playerIndex].Hand, item)
 
 	gs.Market = append(gs.Market[:marketIndex], gs.Market[marketIndex+1:]...)
 	gs.RefillMarket()
 
 	gs.PhaseCompleted()
+
 	return nil
 }

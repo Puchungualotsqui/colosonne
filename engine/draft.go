@@ -8,8 +8,8 @@ import (
 type DraftKind uint
 
 const (
-	DraftTile DraftKind = iota
-	DraftUpgrade
+	DraftTile    DraftKind = iota
+	DraftUpgrade           // deprecated; kept for enum stability
 	DraftStructure
 	DraftAction
 )
@@ -21,6 +21,7 @@ const (
 	Harvest
 	Reinforce
 	Expansion
+	Raid
 )
 
 type DraftItem struct {
@@ -31,7 +32,7 @@ type DraftItem struct {
 }
 
 func GenerateDraftDeck() []DraftItem {
-	deck := make([]DraftItem, 0, 80)
+	deck := make([]DraftItem, 0, 90)
 
 	addTile := func(biome Biome, count int) {
 		for range count {
@@ -60,28 +61,20 @@ func GenerateDraftDeck() []DraftItem {
 		}
 	}
 
-	addUpgrade := func(count int) {
-		for range count {
-			deck = append(deck, DraftItem{
-				Kind: DraftUpgrade,
-			})
-		}
-	}
-
-	addTile(Forest, 14)
+	addTile(Forest, 12)
 	addTile(Mountain, 12)
-	addTile(Plain, 16)
+	addTile(Plain, 12)
+	addTile(CrystalField, 6)
 	addTile(River, 8)
 
-	addUpgrade(10)
-
+	// Draft-only structures.
 	addStructure(Bridge, 5)
 	addStructure(Watchtower, 6)
-	addStructure(Road, 6)
 
 	addAction(Harvest, 4)
 	addAction(Reinforce, 4)
 	addAction(Expansion, 4)
+	addAction(Raid, 3)
 
 	return deck
 }
@@ -92,7 +85,14 @@ func ShuffleDraftItems(items []DraftItem, rng *rand.Rand) {
 	})
 }
 
-func (gs *GameState) useDraftAction(playerId PlayerId, action Action, x, y int) error {
+func (gs *GameState) useDraftAction(
+	playerId PlayerId,
+	action Action,
+	x int,
+	y int,
+	targetPlayerId PlayerId,
+	rng *rand.Rand,
+) error {
 	switch action {
 	case Harvest:
 		return gs.actionHarvest(playerId, x, y)
@@ -102,6 +102,9 @@ func (gs *GameState) useDraftAction(playerId PlayerId, action Action, x, y int) 
 
 	case Expansion:
 		return gs.actionExpansion(playerId)
+
+	case Raid:
+		return gs.actionRaid(playerId, targetPlayerId, rng)
 
 	default:
 		return errors.New("unknown action")
@@ -118,6 +121,14 @@ func (gs *GameState) actionHarvest(playerId PlayerId, x, y int) error {
 		return errors.New("player does not control this tile")
 	}
 
+	if !gs.StructureActive(tile) {
+		return errors.New("tile has no active structure")
+	}
+
+	if tile.HasBlockade {
+		return errors.New("tile is blockaded")
+	}
+
 	resource, err := tile.Biome.Resource()
 	if err != nil {
 		return err
@@ -127,13 +138,7 @@ func (gs *GameState) actionHarvest(playerId PlayerId, x, y int) error {
 		return errors.New("this biome produces no resource")
 	}
 
-	player, err := gs.playerById(playerId)
-	if err != nil {
-		return err
-	}
-
-	player.Resources[resource] += 2
-	return nil
+	return gs.AddResource(playerId, resource, 2)
 }
 
 func (gs *GameState) actionReinforce(playerId PlayerId, x, y int) error {
@@ -142,22 +147,81 @@ func (gs *GameState) actionReinforce(playerId PlayerId, x, y int) error {
 		return errors.New("tile not found")
 	}
 
+	if !gs.canReceiveInfluence(tile) {
+		return errors.New("this tile cannot receive influence")
+	}
+
 	if tile.TempInfluence == nil {
 		tile.TempInfluence = make(map[PlayerId]uint)
 	}
 
 	tile.TempInfluence[playerId] += 2
+
 	return nil
 }
 
 func (gs *GameState) actionExpansion(playerId PlayerId) error {
-	player, err := gs.playerById(playerId)
+	if err := gs.AddResource(playerId, Wood, 1); err != nil {
+		return err
+	}
+
+	return gs.AddResource(playerId, Grain, 1)
+}
+
+func (gs *GameState) actionRaid(playerId PlayerId, targetPlayerId PlayerId, rng *rand.Rand) error {
+	if targetPlayerId == 0 {
+		return errors.New("raid requires a target player")
+	}
+
+	if targetPlayerId == playerId {
+		return errors.New("cannot raid yourself")
+	}
+
+	raider, err := gs.playerById(playerId)
 	if err != nil {
 		return err
 	}
 
-	player.Resources[Wood] += 1
-	player.Resources[Grain] += 1
+	target, err := gs.playerById(targetPlayerId)
+	if err != nil {
+		return err
+	}
+
+	pool := make([]Resource, 0)
+
+	for _, resource := range []Resource{Wood, Stone, Grain, Crystal} {
+		for range target.Resources[resource] {
+			pool = append(pool, resource)
+		}
+	}
+
+	if len(pool) == 0 {
+		return errors.New("target player has no resources")
+	}
+
+	if rng == nil {
+		rng = rand.New(rand.NewSource(rand.Int63()))
+	}
+
+	rng.Shuffle(len(pool), func(i, j int) {
+		pool[i], pool[j] = pool[j], pool[i]
+	})
+
+	steals := 3
+	if len(pool) < steals {
+		steals = len(pool)
+	}
+
+	for i := 0; i < steals; i++ {
+		resource := pool[i]
+
+		if target.Resources[resource] == 0 {
+			continue
+		}
+
+		target.Resources[resource]--
+		raider.Resources[resource]++
+	}
 
 	return nil
 }
@@ -184,60 +248,27 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 
 		tile.Structure = Bridge
 		tile.StructureOwner = playerId
+
 		return nil
 
-	case Road, Watchtower:
+	case Watchtower:
 		if tile.Biome == River {
-			return errors.New("this structure cannot be built on river tiles")
+			return errors.New("watchtower cannot be built on river tiles")
 		}
 
 		if !gs.playerControlsTile(playerId, tile) {
 			return errors.New("player does not control this tile")
 		}
 
-		tile.Structure = structure
+		tile.Structure = Watchtower
 		tile.StructureOwner = playerId
+
 		return nil
 
-	case Outpost:
-		if tile.Biome == River {
-			return errors.New("outpost cannot be built on river tiles")
-		}
-
-		if tile.HasOwner && tile.Owner != playerId {
-			return errors.New("cannot build outpost on enemy controlled tile")
-		}
-
-		tile.Structure = Outpost
-		tile.StructureOwner = playerId
-		return nil
-
-	case City:
-		return errors.New("city cannot be placed directly; upgrade an outpost instead")
+	case Outpost, City, Settlement:
+		return errors.New("this structure is not draft-only; use manual build")
 
 	default:
-		return errors.New("invalid structure")
+		return errors.New("invalid draft structure")
 	}
-}
-
-func (gs *GameState) useDraftUpgrade(playerId PlayerId, x, y int) error {
-	tile := gs.TileAt(x, y)
-	if tile == nil {
-		return errors.New("tile not found")
-	}
-
-	if tile.Biome == River {
-		return errors.New("cannot upgrade on river tiles")
-	}
-
-	if !gs.playerControlsTile(playerId, tile) {
-		return errors.New("player does not control this tile")
-	}
-
-	if tile.UpgradeLevel >= 3 {
-		return errors.New("tile is already fully upgraded")
-	}
-
-	tile.UpgradeLevel++
-	return nil
 }

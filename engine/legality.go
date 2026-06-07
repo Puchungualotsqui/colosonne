@@ -6,24 +6,39 @@ func (gs *GameState) CanUseHand(playerId PlayerId) bool {
 		return false
 	}
 
-	if player.Hand == nil {
+	for i := range player.Hand {
+		if gs.CanUseHandItem(playerId, i) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (gs *GameState) CanUseHandItem(playerId PlayerId, handIndex int) bool {
+	player, err := gs.playerById(playerId)
+	if err != nil {
 		return false
 	}
 
-	item := player.Hand
+	if handIndex < 0 || handIndex >= len(player.Hand) {
+		return false
+	}
+
+	item := player.Hand[handIndex]
 
 	switch item.Kind {
 	case DraftTile:
 		return gs.canPlaceAnyTile()
-
-	case DraftUpgrade:
-		return gs.canUseUpgradeAnywhere(playerId)
 
 	case DraftStructure:
 		return gs.canUseStructureAnywhere(playerId, item.Structure)
 
 	case DraftAction:
 		return gs.canUseActionAnywhere(playerId, item.Action)
+
+	case DraftUpgrade:
+		return false
 
 	default:
 		return false
@@ -40,26 +55,6 @@ func (gs *GameState) canPlaceAnyTile() bool {
 			if gs.TileAt(n[0], n[1]) == nil {
 				return true
 			}
-		}
-	}
-
-	return false
-}
-
-func (gs *GameState) canUseUpgradeAnywhere(playerId PlayerId) bool {
-	for i := range gs.Map {
-		tile := &gs.Map[i]
-
-		if tile.Biome == River {
-			continue
-		}
-
-		if !gs.playerControlsTile(playerId, tile) {
-			continue
-		}
-
-		if tile.UpgradeLevel < 3 {
-			return true
 		}
 	}
 
@@ -95,21 +90,14 @@ func (gs *GameState) canUseStructureOnTile(playerId PlayerId, structure Structur
 
 		return gs.hasAdjacentControlledTile(playerId, tile.X, tile.Y)
 
-	case Road, Watchtower:
+	case Watchtower:
 		if tile.Biome == River {
 			return false
 		}
 
 		return gs.playerControlsTile(playerId, tile)
 
-	case Outpost:
-		if tile.Biome == River {
-			return false
-		}
-
-		return !tile.HasOwner || tile.Owner == playerId
-
-	case City:
+	case Outpost, City, Settlement:
 		return false
 
 	default:
@@ -133,11 +121,22 @@ func (gs *GameState) canUseActionAnywhere(playerId PlayerId, action Action) bool
 	case Expansion:
 		return true
 
+	case Raid:
+		return gs.hasRaidTarget(playerId)
+
 	case Harvest:
 		for i := range gs.Map {
 			tile := &gs.Map[i]
 
 			if !gs.playerControlsTile(playerId, tile) {
+				continue
+			}
+
+			if !gs.StructureActive(tile) {
+				continue
+			}
+
+			if tile.HasBlockade {
 				continue
 			}
 
@@ -154,9 +153,33 @@ func (gs *GameState) canUseActionAnywhere(playerId PlayerId, action Action) bool
 		return false
 
 	case Reinforce:
-		return len(gs.Map) > 0
+		for i := range gs.Map {
+			if gs.canReceiveInfluence(&gs.Map[i]) {
+				return true
+			}
+		}
+
+		return false
 
 	default:
 		return false
 	}
+}
+
+func (gs *GameState) hasRaidTarget(playerId PlayerId) bool {
+	for i := range gs.Players {
+		player := &gs.Players[i]
+
+		if player.Id == playerId {
+			continue
+		}
+
+		player.ensureResources()
+
+		if player.Resources[Wood]+player.Resources[Stone]+player.Resources[Grain]+player.Resources[Crystal] > 0 {
+			return true
+		}
+	}
+
+	return false
 }

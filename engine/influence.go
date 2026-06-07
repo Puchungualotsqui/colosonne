@@ -25,11 +25,31 @@ func (gs *GameState) addInfluence(x, y int, playerId PlayerId, amount uint) {
 		return
 	}
 
+	if !gs.canReceiveInfluence(tile) {
+		return
+	}
+
 	if tile.Influence == nil {
 		tile.Influence = make(map[PlayerId]uint)
 	}
 
 	tile.Influence[playerId] += amount
+}
+
+func (gs *GameState) canReceiveInfluence(tile *Tile) bool {
+	if tile == nil {
+		return false
+	}
+
+	if tile.Biome == River && tile.Structure != Bridge {
+		return false
+	}
+
+	return true
+}
+
+func (gs *GameState) isUnbridgedRiver(tile *Tile) bool {
+	return tile != nil && tile.Biome == River && tile.Structure != Bridge
 }
 
 func (gs *GameState) applyStructureInfluence() {
@@ -41,62 +61,67 @@ func (gs *GameState) applyStructureInfluence() {
 		}
 
 		owner := tile.StructureOwner
-		upgradeBonus := tile.UpgradeLevel
 
 		switch tile.Structure {
+		case Settlement:
+			// Pure production structure. Minimal control.
+			gs.addInfluence(tile.X, tile.Y, owner, 1)
+
 		case Outpost:
-			gs.addInfluence(tile.X, tile.Y, owner, 2+upgradeBonus)
+			gs.addInfluence(tile.X, tile.Y, owner, 2)
 
 			for _, n := range HexNeighbors(tile.X, tile.Y) {
 				gs.addInfluence(n[0], n[1], owner, 1)
 			}
 
-			if tile.Biome == Forest {
-				for _, n := range HexRingRadius2(tile.X, tile.Y) {
-					gs.addInfluence(n[0], n[1], owner, 1)
-				}
-			}
-
 		case City:
-			gs.addInfluence(tile.X, tile.Y, owner, 5+upgradeBonus)
+			// Economy/defensive anchor, not an expansion tool.
+			gs.addInfluence(tile.X, tile.Y, owner, 4)
+
+		case Watchtower:
+			// Strongest control structure. Draft-only.
+			gs.addInfluence(tile.X, tile.Y, owner, 3)
 
 			for _, n := range HexNeighbors(tile.X, tile.Y) {
 				gs.addInfluence(n[0], n[1], owner, 2)
 			}
 
-		case Watchtower:
-			gs.addInfluence(tile.X, tile.Y, owner, 1+upgradeBonus)
-
-			for _, n := range HexNeighbors(tile.X, tile.Y) {
-				gs.addInfluence(n[0], n[1], owner, 1)
-			}
-
 			for _, n := range HexRingRadius2(tile.X, tile.Y) {
-				gs.addInfluence(n[0], n[1], owner, 1)
-			}
-
-		case Road:
-			gs.addInfluence(tile.X, tile.Y, owner, 1+upgradeBonus)
-
-			for _, n := range HexNeighbors(tile.X, tile.Y) {
-				gs.addInfluence(n[0], n[1], owner, 1)
-			}
-
-		case Bridge:
-			gs.addInfluence(tile.X, tile.Y, owner, 1+upgradeBonus)
-
-			for _, n := range HexNeighbors(tile.X, tile.Y) {
-				neighbor := gs.TileAt(n[0], n[1])
-				if neighbor == nil {
-					continue
-				}
-
-				if neighbor.Biome != River {
+				if gs.canInfluenceDistance2(tile.X, tile.Y, n[0], n[1]) {
 					gs.addInfluence(n[0], n[1], owner, 1)
 				}
 			}
+
+		case Bridge:
+			// Bridge makes a river tile controllable/crossable.
+			gs.addInfluence(tile.X, tile.Y, owner, 1)
+
+			for _, n := range HexNeighbors(tile.X, tile.Y) {
+				gs.addInfluence(n[0], n[1], owner, 1)
+			}
 		}
 	}
+}
+
+func (gs *GameState) canInfluenceDistance2(fromX, fromY, toX, toY int) bool {
+	for _, a := range HexNeighbors(fromX, fromY) {
+		for _, b := range HexNeighbors(toX, toY) {
+			if a[0] != b[0] || a[1] != b[1] {
+				continue
+			}
+
+			middle := gs.TileAt(a[0], a[1])
+			if middle == nil {
+				continue
+			}
+
+			if !gs.isUnbridgedRiver(middle) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 func HexRingRadius2(x, y int) [][2]int {
@@ -121,12 +146,19 @@ func abs(v int) int {
 	if v < 0 {
 		return -v
 	}
+
 	return v
 }
 
 func (gs *GameState) resolveTileOwners() {
 	for i := range gs.Map {
 		tile := &gs.Map[i]
+
+		if gs.isUnbridgedRiver(tile) {
+			tile.HasOwner = false
+			tile.Owner = 0
+			continue
+		}
 
 		bestPlayer := PlayerId(0)
 		bestValue := uint(0)
@@ -149,8 +181,6 @@ func (gs *GameState) resolveTileOwners() {
 		}
 
 		if tied {
-			// Tie rule:
-			// ownership does not change.
 			continue
 		}
 
@@ -167,25 +197,37 @@ func (gs *GameState) produceResources() {
 			continue
 		}
 
-		resource, err := tile.Biome.Resource()
-		if err != nil {
+		if tile.HasBlockade {
 			continue
 		}
 
-		if resource == NoneResource {
+		if !gs.StructureActive(tile) {
 			continue
 		}
 
-		amount := uint(1 + tile.UpgradeLevel)
+		switch tile.Structure {
+		case Settlement:
+			_ = gs.AddResource(tile.Owner, Wood, 1)
+			_ = gs.AddResource(tile.Owner, Stone, 1)
+			_ = gs.AddResource(tile.Owner, Grain, 1)
 
-		// Mountain rule:
-		// If an owned Mountain belongs to a connected owned Mountain group of size 2+,
-		// it produces +1 Stone.
-		if tile.Biome == Mountain && gs.ConnectedOwnedMountainGroupSize(tile.X, tile.Y, tile.Owner) >= 2 {
-			amount += 1
+			resource, err := tile.Biome.Resource()
+			if err == nil && resource != NoneResource {
+				_ = gs.AddResource(tile.Owner, resource, 1)
+			}
+
+		case Outpost:
+			resource, err := tile.Biome.Resource()
+			if err == nil && resource != NoneResource {
+				_ = gs.AddResource(tile.Owner, resource, 1)
+			}
+
+		case City:
+			resource, err := tile.Biome.Resource()
+			if err == nil && resource != NoneResource {
+				_ = gs.AddResource(tile.Owner, resource, 2)
+			}
 		}
-
-		_ = gs.AddResource(tile.Owner, resource, amount)
 	}
 }
 
@@ -198,12 +240,10 @@ func (gs *GameState) StructureActive(tile *Tile) bool {
 		return false
 	}
 
-	// Early-game case: newly built outposts on unowned tiles are active.
 	if !tile.HasOwner {
 		return true
 	}
 
-	// Later case: captured structures become inactive.
 	return tile.Owner == tile.StructureOwner
 }
 
@@ -221,55 +261,4 @@ func (gs *GameState) clearTempInfluence() {
 	for i := range gs.Map {
 		gs.Map[i].TempInfluence = make(map[PlayerId]uint)
 	}
-}
-
-func (gs *GameState) ConnectedOwnedMountainGroupSize(x, y int, owner PlayerId) int {
-	start := gs.TileAt(x, y)
-	if start == nil {
-		return 0
-	}
-
-	if start.Biome != Mountain || !start.HasOwner || start.Owner != owner {
-		return 0
-	}
-
-	type coord struct {
-		x int
-		y int
-	}
-
-	visited := make(map[coord]bool)
-	stack := []coord{{x: x, y: y}}
-	size := 0
-
-	for len(stack) > 0 {
-		current := stack[len(stack)-1]
-		stack = stack[:len(stack)-1]
-
-		if visited[current] {
-			continue
-		}
-
-		visited[current] = true
-
-		tile := gs.TileAt(current.x, current.y)
-		if tile == nil {
-			continue
-		}
-
-		if tile.Biome != Mountain || !tile.HasOwner || tile.Owner != owner {
-			continue
-		}
-
-		size++
-
-		for _, n := range HexNeighbors(current.x, current.y) {
-			next := coord{x: n[0], y: n[1]}
-			if !visited[next] {
-				stack = append(stack, next)
-			}
-		}
-	}
-
-	return size
 }

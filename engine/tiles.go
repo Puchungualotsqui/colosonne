@@ -1,8 +1,6 @@
 package engine
 
-import (
-	"errors"
-)
+import "errors"
 
 type Resource uint
 
@@ -11,6 +9,7 @@ const (
 	Wood
 	Stone
 	Grain
+	Crystal
 )
 
 type Biome uint
@@ -21,6 +20,7 @@ const (
 	Mountain
 	Plain
 	River
+	CrystalField
 )
 
 func (b Biome) Resource() (Resource, error) {
@@ -31,6 +31,8 @@ func (b Biome) Resource() (Resource, error) {
 		return Stone, nil
 	case Plain:
 		return Grain, nil
+	case CrystalField:
+		return Crystal, nil
 	case River:
 		return NoneResource, nil
 	default:
@@ -44,21 +46,27 @@ const (
 	NoneStructure Structure = iota
 	Outpost
 	City
+	Settlement
 	Bridge
 	Watchtower
-	Road
 )
 
 type Tile struct {
-	X, Y           int
-	Biome          Biome
-	Influence      map[PlayerId]uint
-	TempInfluence  map[PlayerId]uint
-	Owner          PlayerId
-	HasOwner       bool
+	X, Y int
+
+	Biome Biome
+
+	Influence     map[PlayerId]uint
+	TempInfluence map[PlayerId]uint
+
+	Owner    PlayerId
+	HasOwner bool
+
 	Structure      Structure
 	StructureOwner PlayerId
-	UpgradeLevel   uint
+
+	HasBlockade   bool
+	BlockadeOwner PlayerId
 }
 
 func NewTile(biome Biome) Tile {
@@ -72,6 +80,7 @@ func NewTile(biome Biome) Tile {
 		HasOwner:       false,
 		Structure:      NoneStructure,
 		StructureOwner: 0,
-		UpgradeLevel:   0,
+		HasBlockade:    false,
+		BlockadeOwner:  0,
 	}
 }
