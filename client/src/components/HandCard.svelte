@@ -1,173 +1,10 @@
 <script lang="ts">
-    import {
-        Action,
-        Biome,
-        DraftKind,
-        Structure,
-        type DraftItem,
-    } from "../lib/types";
+    import type { DraftItem } from "../lib/types";
+    import { cardClass, cardIcon, cardTitle, cardType } from "../lib/cardInfo";
+    import CardTooltip from "./CardTooltip.svelte";
 
     export let item: DraftItem | null | undefined;
     export let size: "sm" | "md" | "lg" = "sm";
-
-    function biomeName(biome: Biome) {
-        switch (biome) {
-            case Biome.Forest:
-                return "Forest";
-            case Biome.Mountain:
-                return "Mountain";
-            case Biome.Plain:
-                return "Plain";
-            case Biome.River:
-                return "River";
-            case Biome.Ruins:
-                return "Ruins";
-            default:
-                return "Unknown";
-        }
-    }
-
-    function structureName(structure: Structure) {
-        switch (structure) {
-            case Structure.Bridge:
-                return "Bridge";
-            case Structure.Watchtower:
-                return "Tower";
-            case Structure.Outpost:
-                return "Outpost";
-            case Structure.City:
-                return "City";
-            case Structure.Settlement:
-                return "Settlement";
-            default:
-                return "Structure";
-        }
-    }
-
-    function actionName(action: Action) {
-        switch (action) {
-            case Action.Harvest:
-                return "Harvest";
-            case Action.Reinforce:
-                return "Reinforce";
-            case Action.Expansion:
-                return "Expand";
-            case Action.Raid:
-                return "Raid";
-            default:
-                return "Action";
-        }
-    }
-
-    function title(item: DraftItem | null | undefined) {
-        if (!item) return "Empty";
-
-        switch (item.Kind) {
-            case DraftKind.Tile:
-                return biomeName(item.Biome);
-            case DraftKind.Structure:
-                return structureName(item.Structure);
-            case DraftKind.Action:
-                return actionName(item.Action);
-            default:
-                return "Unknown";
-        }
-    }
-
-    function typeLabel(item: DraftItem | null | undefined) {
-        if (!item) return "Hand";
-
-        switch (item.Kind) {
-            case DraftKind.Tile:
-                return "Tile";
-            case DraftKind.Structure:
-                return "Build";
-            case DraftKind.Action:
-                return "Action";
-            default:
-                return "";
-        }
-    }
-
-    function icon(item: DraftItem | null | undefined) {
-        if (!item) return "—";
-
-        if (item.Kind === DraftKind.Tile) {
-            switch (item.Biome) {
-                case Biome.Forest:
-                    return "♣";
-                case Biome.Mountain:
-                    return "▲";
-                case Biome.Plain:
-                    return "◆";
-                case Biome.River:
-                    return "≈";
-                case Biome.Ruins:
-                    return "✧";
-            }
-        }
-
-        if (item.Kind === DraftKind.Structure) {
-            switch (item.Structure) {
-                case Structure.Outpost:
-                    return "⌂";
-                case Structure.City:
-                    return "▦";
-                case Structure.Bridge:
-                    return "⌒";
-                case Structure.Watchtower:
-                    return "♜";
-                case Structure.Settlement:
-                    return "◈";
-            }
-        }
-
-        if (item.Kind === DraftKind.Action) {
-            switch (item.Action) {
-                case Action.Harvest:
-                    return "✦";
-                case Action.Reinforce:
-                    return "+";
-                case Action.Expansion:
-                    return "⇱";
-                case Action.Raid:
-                    return "☠";
-            }
-        }
-
-        return "?";
-    }
-
-    function cardClass(item: DraftItem | null | undefined) {
-        if (!item) {
-            return "border-[#f8efe0]/15 bg-[#f8efe0]/8 text-[#9fc9c5]";
-        }
-
-        if (item.Kind === DraftKind.Tile) {
-            switch (item.Biome) {
-                case Biome.Forest:
-                    return "border-[#2f6546] bg-[#5b9368] text-[#142833]";
-                case Biome.Mountain:
-                    return "border-[#656b73] bg-[#a8adb2] text-[#142833]";
-                case Biome.Plain:
-                    return "border-[#9b7034] bg-[#d9b56a] text-[#142833]";
-                case Biome.River:
-                    return "border-[#327b8d] bg-[#6eb8c5] text-[#102b38]";
-                case Biome.Ruins:
-                    return "border-[#6d4c9b] bg-[#9b79c9] text-[#142833]";
-            }
-        }
-
-        if (item.Kind === DraftKind.Structure) {
-            return "border-[#6b4a2f] bg-[#ead7aa] text-[#142833]";
-        }
-
-        if (item.Kind === DraftKind.Action) {
-            return "border-[#327b8d] bg-[#73c4bd] text-[#102b38]";
-        }
-
-        return "border-[#6b4a2f] bg-[#ead7aa] text-[#142833]";
-    }
 
     $: sizeClass =
         size === "lg" ? "h-32 p-4" : size === "md" ? "h-24 p-3" : "h-16 p-2";
@@ -183,38 +20,41 @@
         size === "lg" ? "text-xl" : size === "md" ? "text-base" : "text-sm";
 </script>
 
-<div
-    class={[
-        "relative overflow-hidden rounded-2xl border-2 shadow-[0_5px_0_rgba(0,0,0,0.18)]",
-        sizeClass,
-        cardClass(item),
-    ].join(" ")}
-    title={`${title(item)} ${typeLabel(item)}`}
->
-    <div class="flex h-full items-center gap-3">
-        <div
-            class={[
-                "grid shrink-0 place-items-center bg-white/35 font-black",
-                iconClass,
-            ].join(" ")}
-        >
-            {icon(item)}
-        </div>
-
-        <div class="min-w-0">
+<CardTooltip {item}>
+    <div
+        class={[
+            "relative overflow-hidden rounded-2xl border-2 shadow-[0_5px_0_rgba(0,0,0,0.18)]",
+            sizeClass,
+            cardClass(item),
+        ].join(" ")}
+        title={`${cardTitle(item)} ${cardType(item)}`}
+    >
+        <div class="flex h-full items-center gap-3">
             <div
-                class="text-[9px] font-black uppercase tracking-wider opacity-70"
+                class={[
+                    "grid shrink-0 place-items-center bg-white/35 font-black",
+                    iconClass,
+                ].join(" ")}
             >
-                {typeLabel(item)}
+                {cardIcon(item)}
             </div>
 
-            <div
-                class={["truncate font-black leading-tight", titleClass].join(
-                    " ",
-                )}
-            >
-                {title(item)}
+            <div class="min-w-0">
+                <div
+                    class="text-[9px] font-black uppercase tracking-wider opacity-70"
+                >
+                    {cardType(item)}
+                </div>
+
+                <div
+                    class={[
+                        "truncate font-black leading-tight",
+                        titleClass,
+                    ].join(" ")}
+                >
+                    {cardTitle(item)}
+                </div>
             </div>
         </div>
     </div>
-</div>
+</CardTooltip>

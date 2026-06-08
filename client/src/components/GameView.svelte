@@ -4,6 +4,7 @@
     import Board from "./Board.svelte";
     import Market from "./Market.svelte";
     import HandCard from "./HandCard.svelte";
+    import MiniHandCard from "./MiniHandCard.svelte";
     import {
         Action,
         Biome,
@@ -564,7 +565,7 @@
     </header>
 
     <section
-        class="relative z-10 mx-auto grid w-full max-w-[1540px] gap-5 px-4 pb-10 pt-3 lg:grid-cols-[250px_minmax(0,1fr)_330px] lg:px-6 xl:grid-cols-[270px_minmax(0,1fr)_350px]"
+        class="relative z-10 mx-auto grid w-full max-w-[1640px] gap-5 px-4 pb-10 pt-3 lg:grid-cols-[310px_minmax(0,1fr)_350px] lg:px-6 xl:grid-cols-[330px_minmax(0,1fr)_360px]"
     >
         <aside
             class="min-w-0 space-y-5 lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto lg:pr-1"
@@ -667,17 +668,17 @@
                                 </div>
                             </div>
 
-                            <div class="mt-3 grid grid-cols-3 gap-2">
+                            <div class="mt-3 flex flex-wrap gap-2">
                                 {#each handItems(player) as card}
-                                    <HandCard item={card} size="sm" />
+                                    <MiniHandCard item={card} />
                                 {/each}
 
                                 {#if handItems(player).length === 0}
-                                    <HandCard item={null} size="sm" />
+                                    <MiniHandCard item={null} />
                                 {/if}
                             </div>
 
-                            <div class="mt-3 flex flex-wrap gap-2">
+                            <div class="mt-3 flex flex-nowrap gap-1.5">
                                 <ResourceIcon
                                     resource="wood"
                                     amount={resourceAmount(player, 1)}
