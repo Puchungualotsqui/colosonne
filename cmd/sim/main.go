@@ -23,17 +23,14 @@ func main() {
 
 	// Friendly opening market.
 	// 2 players * 3 cards each, plus a few tactical cards.
-	gs.Market = []engine.DraftItem{
-		{Kind: engine.DraftTile, Biome: engine.Forest},
-		{Kind: engine.DraftTile, Biome: engine.Mountain},
-		{Kind: engine.DraftTile, Biome: engine.Plain},
-		{Kind: engine.DraftTile, Biome: engine.Ruins},
-		{Kind: engine.DraftTile, Biome: engine.Forest},
-		{Kind: engine.DraftTile, Biome: engine.Mountain},
-		{Kind: engine.DraftAction, Action: engine.Expansion},
-		{Kind: engine.DraftAction, Action: engine.Raid},
-		{Kind: engine.DraftStructure, Structure: engine.Watchtower},
-	}
+	gs.Market = marketSlots(
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Forest},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Mountain},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Plain},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Ruins},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Forest},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Mountain},
+	)
 
 	reader := bufio.NewReader(os.Stdin)
 
@@ -350,7 +347,12 @@ func printMarket(gs *engine.GameState) {
 	fmt.Println("\nMarket:")
 
 	for i, item := range gs.Market {
-		fmt.Printf("  [%d] %s\n", i, describeDraftItem(item))
+		if item == nil {
+			fmt.Printf("  [%d] empty\n", i)
+			continue
+		}
+
+		fmt.Printf("  [%d] %s\n", i, describeDraftItem(*item))
 	}
 }
 
@@ -556,4 +558,15 @@ func describeAction(a engine.Action) string {
 	default:
 		return "UnknownAction"
 	}
+}
+
+func marketSlots(items ...engine.DraftItem) []*engine.DraftItem {
+	out := make([]*engine.DraftItem, engine.MarketSize)
+
+	for i := 0; i < len(items) && i < engine.MarketSize; i++ {
+		item := items[i]
+		out[i] = &item
+	}
+
+	return out
 }

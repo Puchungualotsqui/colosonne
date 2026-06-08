@@ -154,7 +154,7 @@ export function cardDescription(item: DraftItem | null | undefined) {
       }
 
       if (item.Structure === Structure.Watchtower) {
-        return "Draft-only structure. Strong influence, no production.";
+        return "Draft-only structure. Place on your land or neutral non-river land. Strong influence, no production.";
       }
 
       return "This structure is not normally played from draft.";

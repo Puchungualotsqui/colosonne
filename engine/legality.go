@@ -92,7 +92,11 @@ func (gs *GameState) canUseStructureOnTile(playerId PlayerId, structure Structur
 			return false
 		}
 
-		return gs.playerControlsTile(playerId, tile)
+		if tile.HasOwner && tile.Owner != playerId {
+			return false
+		}
+
+		return true
 
 	case Outpost, City, Settlement:
 		return false

@@ -19,14 +19,14 @@ func main() {
 
 	// Make the first round deterministic.
 	// 2 players * 3 cards each = 6 drafted cards.
-	gs.Market = []engine.DraftItem{
-		{Kind: engine.DraftTile, Biome: engine.Forest},
-		{Kind: engine.DraftTile, Biome: engine.Mountain},
-		{Kind: engine.DraftTile, Biome: engine.Plain},
-		{Kind: engine.DraftTile, Biome: engine.Ruins},
-		{Kind: engine.DraftTile, Biome: engine.Forest},
-		{Kind: engine.DraftTile, Biome: engine.Mountain},
-	}
+	gs.Market = marketSlots(
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Forest},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Mountain},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Plain},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Ruins},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Forest},
+		engine.DraftItem{Kind: engine.DraftTile, Biome: engine.Mountain},
+	)
 
 	fmt.Println("=== Initial Game State ===")
 	printState(gs)
@@ -35,12 +35,15 @@ func main() {
 	for gs.CurrentPhase == engine.PhasePick {
 		playerId := gs.CurrentPlayer
 
-		fmt.Printf("Player %d picks market item 0: %s\n",
+		marketIndex := firstFilledMarketIndex(gs)
+
+		fmt.Printf("Player %d picks market item %d: %s\n",
 			playerId,
-			describeDraftItem(gs.Market[0]),
+			marketIndex,
+			describeDraftItem(*gs.Market[marketIndex]),
 		)
 
-		if err := gs.PickMarketItem(playerId, 0); err != nil {
+		if err := gs.PickMarketItem(playerId, marketIndex); err != nil {
 			panic(err)
 		}
 
@@ -314,4 +317,25 @@ func describeAction(a engine.Action) string {
 	default:
 		return "UnknownAction"
 	}
+}
+
+func marketSlots(items ...engine.DraftItem) []*engine.DraftItem {
+	out := make([]*engine.DraftItem, engine.MarketSize)
+
+	for i := 0; i < len(items) && i < engine.MarketSize; i++ {
+		item := items[i]
+		out[i] = &item
+	}
+
+	return out
+}
+
+func firstFilledMarketIndex(gs *engine.GameState) int {
+	for i, item := range gs.Market {
+		if item != nil {
+			return i
+		}
+	}
+
+	panic("no filled market slot found")
 }

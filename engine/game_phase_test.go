@@ -17,14 +17,14 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 
 	// Make the opening deterministic.
 	// 2 players * 3 cards each = 6 drafted cards before Place phase.
-	gs.Market = []DraftItem{
-		{Kind: DraftTile, Biome: Forest},
-		{Kind: DraftTile, Biome: Mountain},
-		{Kind: DraftTile, Biome: Plain},
-		{Kind: DraftTile, Biome: Forest},
-		{Kind: DraftTile, Biome: Mountain},
-		{Kind: DraftTile, Biome: Plain},
-	}
+	gs.Market = marketSlots(
+		DraftItem{Kind: DraftTile, Biome: Forest},
+		DraftItem{Kind: DraftTile, Biome: Mountain},
+		DraftItem{Kind: DraftTile, Biome: Plain},
+		DraftItem{Kind: DraftTile, Biome: Forest},
+		DraftItem{Kind: DraftTile, Biome: Mountain},
+		DraftItem{Kind: DraftTile, Biome: Plain},
+	)
 
 	if gs.CurrentPhase != PhasePick {
 		t.Fatalf("expected PhasePick, got %v", gs.CurrentPhase)
@@ -33,7 +33,9 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 	// First picker drafts 3 cards.
 	firstPicker := gs.CurrentPlayer
 	for i := 0; i < CardsPerDraftTurn; i++ {
-		if err := gs.PickMarketItem(firstPicker, 0); err != nil {
+		index := firstFilledMarketIndex(t, gs)
+
+		if err := gs.PickMarketItem(firstPicker, index); err != nil {
 			t.Fatalf("first picker pick %d failed: %v", i+1, err)
 		}
 	}
@@ -49,7 +51,9 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 
 	// Second picker drafts 3 cards.
 	for i := 0; i < CardsPerDraftTurn; i++ {
-		if err := gs.PickMarketItem(secondPicker, 0); err != nil {
+		index := firstFilledMarketIndex(t, gs)
+
+		if err := gs.PickMarketItem(secondPicker, index); err != nil {
 			t.Fatalf("second picker pick %d failed: %v", i+1, err)
 		}
 	}
@@ -99,6 +103,30 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 	if gs.CurrentPlayer == 0 {
 		t.Fatalf("expected a real current player after automatic recount")
 	}
+}
+
+func marketSlots(items ...DraftItem) []*DraftItem {
+	out := make([]*DraftItem, MarketSize)
+
+	for i := 0; i < len(items) && i < MarketSize; i++ {
+		item := items[i]
+		out[i] = &item
+	}
+
+	return out
+}
+
+func firstFilledMarketIndex(t *testing.T, gs *GameState) int {
+	t.Helper()
+
+	for i, item := range gs.Market {
+		if item != nil {
+			return i
+		}
+	}
+
+	t.Fatalf("no filled market slot found")
+	return 0
 }
 
 func placeAllTilesForCurrentPlayer(t *testing.T, gs *GameState, playerId PlayerId) {

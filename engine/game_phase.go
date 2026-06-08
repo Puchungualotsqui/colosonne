@@ -18,7 +18,7 @@ type GameState struct {
 	Map     []Tile
 
 	Deck   []DraftItem
-	Market []DraftItem
+	Market []*DraftItem
 
 	CurrentPlayer PlayerId
 	CurrentPhase  GamePhase
@@ -54,7 +54,7 @@ func NewGameState(players []Player, rng *rand.Rand) *GameState {
 		Players:         players,
 		Map:             []Tile{},
 		Deck:            deck,
-		Market:          []DraftItem{},
+		Market:          make([]*DraftItem, MarketSize),
 		CurrentPhase:    PhasePick,
 		RoundFirstIndex: 0,
 		TurnIndex:       0,
@@ -130,12 +130,65 @@ func (gs *GameState) CountTileCardsInMarket() int {
 	count := 0
 
 	for _, item := range gs.Market {
+		if item == nil {
+			continue
+		}
+
 		if item.Kind == DraftTile {
 			count++
 		}
 	}
 
 	return count
+}
+
+func (gs *GameState) CountCardsInMarket() int {
+	count := 0
+
+	for _, item := range gs.Market {
+		if item != nil {
+			count++
+		}
+	}
+
+	return count
+}
+
+func (gs *GameState) normalizeMarketSlots() {
+	for len(gs.Market) < MarketSize {
+		gs.Market = append(gs.Market, nil)
+	}
+
+	if len(gs.Market) <= MarketSize {
+		return
+	}
+
+	for _, item := range gs.Market[MarketSize:] {
+		if item != nil {
+			gs.Deck = append(gs.Deck, *item)
+		}
+	}
+
+	gs.Market = gs.Market[:MarketSize]
+}
+
+func (gs *GameState) firstEmptyMarketSlot() int {
+	for i, item := range gs.Market {
+		if item == nil {
+			return i
+		}
+	}
+
+	return -1
+}
+
+func (gs *GameState) setMarketSlot(index int, item DraftItem) {
+	itemCopy := item
+	gs.Market[index] = &itemCopy
+}
+
+func (gs *GameState) hasEmptyMarketSlot() bool {
+	return gs.firstEmptyMarketSlot() >= 0
 }
 
 func (gs *GameState) drawFirstTileFromDeck() (DraftItem, bool) {
@@ -161,26 +214,42 @@ func (gs *GameState) drawTopFromDeck() (DraftItem, bool) {
 }
 
 func (gs *GameState) RefillMarket() {
+	gs.normalizeMarketSlots()
+
 	requiredTiles := gs.RequiredTileCardsInMarket()
 
-	for len(gs.Market) < MarketSize && gs.CountTileCardsInMarket() < requiredTiles {
+	// First fill empty slots with tile cards until the required tile minimum is met.
+	for gs.hasEmptyMarketSlot() && gs.CountTileCardsInMarket() < requiredTiles {
 		item, ok := gs.drawFirstTileFromDeck()
 		if !ok {
 			break
 		}
 
-		gs.Market = append(gs.Market, item)
+		slot := gs.firstEmptyMarketSlot()
+		if slot < 0 {
+			break
+		}
+
+		gs.setMarketSlot(slot, item)
 	}
 
-	for len(gs.Market) < MarketSize {
+	// Then fill remaining empty slots from the top of the deck.
+	for gs.hasEmptyMarketSlot() {
 		item, ok := gs.drawTopFromDeck()
 		if !ok {
 			break
 		}
 
-		gs.Market = append(gs.Market, item)
+		slot := gs.firstEmptyMarketSlot()
+		if slot < 0 {
+			break
+		}
+
+		gs.setMarketSlot(slot, item)
 	}
 
+	// If the market still does not satisfy the required tile count,
+	// replace non-tile cards from the end. This preserves the old tile guarantee.
 	for gs.CountTileCardsInMarket() < requiredTiles {
 		tileItem, ok := gs.drawFirstTileFromDeck()
 		if !ok {
@@ -190,16 +259,21 @@ func (gs *GameState) RefillMarket() {
 		replaced := false
 
 		for i := len(gs.Market) - 1; i >= 0; i-- {
+			if gs.Market[i] == nil {
+				continue
+			}
+
 			if gs.Market[i].Kind != DraftTile {
-				gs.Deck = append(gs.Deck, gs.Market[i])
-				gs.Market[i] = tileItem
+				gs.Deck = append(gs.Deck, *gs.Market[i])
+				gs.setMarketSlot(i, tileItem)
 				replaced = true
 				break
 			}
 		}
 
 		if !replaced {
-			gs.Market = append(gs.Market, tileItem)
+			gs.Deck = append(gs.Deck, tileItem)
+			break
 		}
 	}
 }
@@ -282,7 +356,7 @@ func (gs *GameState) PhaseCompleted() {
 	switch gs.CurrentPhase {
 	case PhasePick:
 		player, err := gs.playerById(gs.CurrentPlayer)
-		if err == nil && len(player.Hand) < CardsPerDraftTurn && len(gs.Market) > 0 {
+		if err == nil && len(player.Hand) < CardsPerDraftTurn && gs.CountCardsInMarket() > 0 {
 			return
 		}
 
@@ -334,8 +408,14 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 		return errors.New("not current player")
 	}
 
+	gs.normalizeMarketSlots()
+
 	if marketIndex < 0 || marketIndex >= len(gs.Market) {
 		return errors.New("invalid market index")
+	}
+
+	if gs.Market[marketIndex] == nil {
+		return errors.New("market slot is empty")
 	}
 
 	playerIndex, err := gs.PlayerIndex(playerId)
@@ -343,16 +423,18 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 		return errors.New("player not found")
 	}
 
-	const maxHandSize = 3
+	const maxHandSize = CardsPerDraftTurn
 
 	if len(gs.Players[playerIndex].Hand) >= maxHandSize {
 		return errors.New("player already has 3 drafted items")
 	}
 
-	item := gs.Market[marketIndex]
+	item := *gs.Market[marketIndex]
 	gs.Players[playerIndex].Hand = append(gs.Players[playerIndex].Hand, item)
 
-	gs.Market = append(gs.Market[:marketIndex], gs.Market[marketIndex+1:]...)
+	// Keep the slot position stable.
+	// JSON will encode this as null.
+	gs.Market[marketIndex] = nil
 
 	if len(gs.Players[playerIndex].Hand) >= maxHandSize {
 		gs.PhaseCompleted()

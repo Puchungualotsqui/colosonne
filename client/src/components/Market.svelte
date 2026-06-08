@@ -13,18 +13,17 @@
     const MARKET_SIZE = 6;
     const MAX_HAND = 3;
 
-    type VisualSlot = {
-        item: DraftItem;
-        marketIndex: number;
-    } | null;
-
-    let visualSlots: VisualSlot[] = Array(MARKET_SIZE).fill(null);
-    let lastMarketSignature = "";
-
     $: me = game.Players.find((p) => p.Id === playerId);
     $: hand = me?.Hand ?? [];
     $: handCount = hand.length;
     $: remainingPicks = Math.max(0, MAX_HAND - handCount);
+
+    $: marketSlots = Array.from(
+        { length: MARKET_SIZE },
+        (_, index) => game.Market[index] ?? null,
+    );
+
+    $: filledCount = marketSlots.filter((slot) => slot !== null).length;
 
     $: canPick =
         role === "player" &&
@@ -32,104 +31,25 @@
         game.CurrentPlayer === playerId &&
         handCount < MAX_HAND;
 
-    $: {
-        const signature = `${game.Round}|${game.CurrentPhase}|${game.CurrentPlayer}|${marketSignature(game.Market)}`;
-
-        if (signature !== lastMarketSignature) {
-            visualSlots = reconcileSlots(visualSlots, game.Market);
-            lastMarketSignature = signature;
-        }
-    }
-
-    function marketSignature(market: DraftItem[]) {
-        return market.map(itemSignature).join("|");
-    }
-
-    function itemSignature(item: DraftItem) {
-        return `${item.Kind}:${item.Biome}:${item.Structure}:${item.Action}`;
-    }
-
-    function sameItem(a: DraftItem, b: DraftItem) {
-        return itemSignature(a) === itemSignature(b);
-    }
-
-    function isEmptyVisualSlots(slots: VisualSlot[]) {
-        return slots.every((slot) => slot === null);
-    }
-
-    function resetSlots(market: DraftItem[]): VisualSlot[] {
-        return Array.from({ length: MARKET_SIZE }, (_, index) => {
-            const item = market[index];
-            if (!item) return null;
-
-            return {
-                item,
-                marketIndex: index,
-            };
-        });
-    }
-
-    function reconcileSlots(
-        previousSlots: VisualSlot[],
-        nextMarket: DraftItem[],
-    ): VisualSlot[] {
-        if (nextMarket.length === 0) {
-            return Array(MARKET_SIZE).fill(null);
-        }
-
-        if (isEmptyVisualSlots(previousSlots)) {
-            return resetSlots(nextMarket);
-        }
-
-        const nextSlots: VisualSlot[] = Array(MARKET_SIZE).fill(null);
-
-        const remaining = nextMarket.map((item, marketIndex) => ({
-            item,
-            marketIndex,
-        }));
-
-        for (let slotIndex = 0; slotIndex < MARKET_SIZE; slotIndex++) {
-            const previous = previousSlots[slotIndex];
-            if (!previous) continue;
-
-            const foundIndex = remaining.findIndex((entry) =>
-                sameItem(entry.item, previous.item),
-            );
-
-            if (foundIndex >= 0) {
-                const [entry] = remaining.splice(foundIndex, 1);
-                nextSlots[slotIndex] = entry;
-            }
-        }
-
-        for (let slotIndex = 0; slotIndex < MARKET_SIZE; slotIndex++) {
-            if (nextSlots[slotIndex]) continue;
-            if (remaining.length === 0) break;
-
-            const entry = remaining.shift();
-            nextSlots[slotIndex] = entry ?? null;
-        }
-
-        return nextSlots;
-    }
-
-    function pick(slotIndex: number, slot: Exclude<VisualSlot, null>) {
+    function pick(slotIndex: number, item: DraftItem) {
         debugLog("market.pick.click", {
             slotIndex,
-            marketIndex: slot.marketIndex,
+            sentMarketIndex: slotIndex,
             canPick,
             role,
             playerId,
             currentPlayer: game.CurrentPlayer,
             currentPhase: game.CurrentPhase,
             handCount,
-            marketSize: game.Market.length,
-            item: slot.item,
+            marketRaw: game.Market,
+            marketSlots,
+            item,
         });
 
         if (!canPick) return;
 
-        onPick(slot.marketIndex);
+        // Send the exact backend slot index.
+        onPick(slotIndex);
     }
 </script>
 
@@ -150,9 +70,9 @@
             {#if canPick}
                 Pick {remainingPicks}
             {:else if game.CurrentPhase === GamePhase.Pick}
-                {game.Market.length} left
+                {filledCount}/6 left
             {:else}
-                {game.Market.length} cards
+                {filledCount}/6 cards
             {/if}
         </div>
     </div>
@@ -160,15 +80,12 @@
     <div
         class="mt-4 grid grid-cols-2 gap-3 rounded-3xl bg-[#142833]/35 p-3 ring-1 ring-[#f8efe0]/10"
     >
-        {#each visualSlots as slot, slotIndex (slotIndex)}
+        {#each marketSlots as item, slotIndex (slotIndex)}
             <div
                 class="relative h-32 rounded-2xl bg-[#102832] p-1 shadow-[inset_0_3px_8px_rgba(0,0,0,0.35),0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#f8efe0]/10"
             >
-                {#if slot}
-                    <CardTooltip
-                        item={slot.item}
-                        hint={canPick ? "Click to draft" : ""}
-                    >
+                {#if item}
+                    <CardTooltip {item} hint={canPick ? "Click to draft" : ""}>
                         <button
                             class={[
                                 "block h-full w-full rounded-2xl text-left transition",
@@ -178,9 +95,11 @@
                             ].join(" ")}
                             type="button"
                             disabled={!canPick}
-                            on:click={() => pick(slotIndex, slot)}
+                            on:click={() => pick(slotIndex, item)}
                         >
-                            <DraftCard item={slot.item} disabled={!canPick} />
+                            {#key `${slotIndex}-${item.Kind}-${item.Biome}-${item.Structure}-${item.Action}`}
+                                <DraftCard {item} disabled={!canPick} />
+                            {/key}
                         </button>
                     </CardTooltip>
                 {:else}

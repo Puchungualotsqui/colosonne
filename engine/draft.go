@@ -255,8 +255,8 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 			return errors.New("watchtower cannot be built on river tiles")
 		}
 
-		if !gs.playerControlsTile(playerId, tile) {
-			return errors.New("player does not control this tile")
+		if tile.HasOwner && tile.Owner != playerId {
+			return errors.New("watchtower cannot be built on enemy controlled tiles")
 		}
 
 		tile.Structure = Watchtower

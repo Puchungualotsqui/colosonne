@@ -404,7 +404,7 @@ func (r *Room) BroadcastState() {
 		currentPlayer = game.CurrentPlayer
 		round = game.Round
 		mapTiles = len(game.Map)
-		marketCards = len(game.Market)
+		marketCards = game.CountCardsInMarket()
 	}
 
 	log.Printf(

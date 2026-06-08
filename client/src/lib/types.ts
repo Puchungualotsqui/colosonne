@@ -67,7 +67,7 @@ export type DraftItem = {
   Action: Action;
 };
 
-export type MarketSlot = DraftItem;
+export type MarketSlot = DraftItem | null;
 
 export type Player = {
   Id: number;
@@ -120,9 +120,9 @@ export type GameState = {
   Map: Tile[];
   Deck: DraftItem[];
 
-  // The backend shrinks the market during a player's draft turn.
-  // Example: 6 -> 5 -> 4 -> 3, then refills when the next player starts drafting.
-  Market: DraftItem[];
+  // Backend sends 6 fixed slots.
+  // Picked slots are null.
+  Market: MarketSlot[];
 
   CurrentPlayer: number;
   CurrentPhase: GamePhase;

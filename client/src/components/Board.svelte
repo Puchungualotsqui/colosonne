@@ -282,6 +282,67 @@
         });
     }
 
+    function isEnemyControlledTile(tile: Tile | undefined) {
+        return !!tile && tile.HasOwner && tile.Owner !== playerId;
+    }
+
+    function isUnownedTile(tile: Tile | undefined) {
+        return !!tile && !tile.HasOwner;
+    }
+
+    function canBuildBlockadeOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        // Blockade cannot be placed on rivers.
+        if (tile.Biome === Biome.River) return false;
+
+        // Cannot place on already blockaded tile.
+        if (tile.HasBlockade) return false;
+
+        // Cannot blockade your own tile.
+        if (controlsTile(tile)) return false;
+
+        // Enemy tile is valid, with or without a structure.
+        if (isEnemyControlledTile(tile)) return true;
+
+        // Neutral tile is valid only if adjacent to your controlled territory.
+        if (isUnownedTile(tile)) {
+            return hasAdjacentControlledTile(tile.X, tile.Y);
+        }
+
+        return false;
+    }
+
+    function blockadeTargetMessage(tile: Tile) {
+        if (tile.Biome === Biome.River) return "Cannot blockade river";
+        if (tile.HasBlockade) return "Already blockaded";
+        if (controlsTile(tile)) return "Cannot blockade your own tile";
+
+        if (isEnemyControlledTile(tile)) {
+            return tile.Structure !== Structure.None
+                ? "Blockade enemy structure"
+                : "Blockade enemy tile";
+        }
+
+        if (isUnownedTile(tile)) {
+            return hasAdjacentControlledTile(tile.X, tile.Y)
+                ? "Blockade neutral tile"
+                : "Neutral blockade needs adjacent controlled tile";
+        }
+
+        return "Invalid blockade target";
+    }
+
+    function settlementTargetMessage(tile: Tile) {
+        if (tile.Biome === Biome.River)
+            return "Settlement cannot be built on river";
+        if (tile.Structure !== Structure.None)
+            return "Tile already has a structure";
+        if (!controlsTile(tile))
+            return "Settlement requires friendly territory";
+        return "Build Settlement";
+    }
+
     function draftNeedsBoardTarget(item: DraftItem) {
         if (item.Kind === DraftKind.Structure) return true;
 
@@ -312,7 +373,11 @@
                     );
 
                 case Structure.Watchtower:
-                    return tile.Biome !== Biome.River && controlsTile(tile);
+                    return (
+                        tile.Biome !== Biome.River &&
+                        tile.Structure === Structure.None &&
+                        !isEnemyControlledTile(tile)
+                    );
 
                 case Structure.Outpost:
                 case Structure.City:
@@ -350,7 +415,8 @@
             case "settlement":
                 return (
                     tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None
+                    tile.Structure === Structure.None &&
+                    controlsTile(tile)
                 );
 
             case "city":
@@ -360,11 +426,7 @@
                 );
 
             case "blockade":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None &&
-                    !tile.HasBlockade
-                );
+                return canBuildBlockadeOnTile(tile);
 
             case "flood":
                 return (
@@ -383,7 +445,35 @@
 
         if (canUseDraft && selectedHandItem) {
             if (isValidDraftTarget(selectedHandItem, tile)) {
+                if (
+                    selectedHandItem.Kind === DraftKind.Structure &&
+                    selectedHandItem.Structure === Structure.Watchtower
+                ) {
+                    return tile.HasOwner
+                        ? "Build Watchtower on your tile"
+                        : "Build Watchtower on neutral tile";
+                }
+
+                if (
+                    selectedHandItem.Kind === DraftKind.Structure &&
+                    selectedHandItem.Structure === Structure.Bridge
+                ) {
+                    return "Build Bridge";
+                }
+
                 return "Use card here";
+            }
+
+            if (
+                selectedHandItem.Kind === DraftKind.Structure &&
+                selectedHandItem.Structure === Structure.Watchtower
+            ) {
+                if (tile.Biome === Biome.River)
+                    return "Watchtower cannot be built on river";
+                if (tile.Structure !== Structure.None)
+                    return "Tile already has a structure";
+                if (isEnemyControlledTile(tile))
+                    return "Cannot build Watchtower on enemy tile";
             }
         }
 
@@ -395,15 +485,29 @@
                     case "settlement":
                         return "Build Settlement";
                     case "city":
-                        return "Upgrade to City";
+                        return "Upgrade Outpost to City";
                     case "blockade":
-                        return "Build Blockade";
+                        return blockadeTargetMessage(tile);
                     case "flood":
                         return "Convert to River";
                 }
             }
 
+            if (selectedBuildAction === "settlement") {
+                return settlementTargetMessage(tile);
+            }
+
+            if (selectedBuildAction === "blockade") {
+                return blockadeTargetMessage(tile);
+            }
+
             if (selectedBuildAction === "city") {
+                if (tile.Structure === Structure.Outpost) {
+                    return tile.StructureOwner === playerId
+                        ? "Upgrade Outpost to City"
+                        : "Requires your own outpost";
+                }
+
                 return "Requires your outpost";
             }
 

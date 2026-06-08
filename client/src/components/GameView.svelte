@@ -6,6 +6,7 @@
     import HandCard from "./HandCard.svelte";
     import MiniHandCard from "./MiniHandCard.svelte";
     import CardTooltip from "./CardTooltip.svelte";
+    import BuildActionTooltip from "./BuildActionTooltip.svelte";
     import {
         Action,
         Biome,
@@ -243,15 +244,6 @@
         );
     }
 
-    function scaledCost(base: Cost, multiplier: number): Cost {
-        return {
-            wood: (base.wood ?? 0) * multiplier,
-            stone: (base.stone ?? 0) * multiplier,
-            grain: (base.grain ?? 0) * multiplier,
-            relic: (base.relic ?? 0) * multiplier,
-        };
-    }
-
     function structureActiveForPlayer(tile: {
         HasOwner: boolean;
         Owner: number;
@@ -411,6 +403,30 @@
         return hexNeighbors(x, y).some((n) => controlsTile(tileAt(n.x, n.y)));
     }
 
+    function isEnemyControlledTile(tile: any) {
+        return !!tile && tile.HasOwner && tile.Owner !== playerId;
+    }
+
+    function isUnownedTile(tile: any) {
+        return !!tile && !tile.HasOwner;
+    }
+
+    function canBuildBlockadeOnTile(tile: any) {
+        if (!tile) return false;
+
+        if (tile.Biome === Biome.River) return false;
+        if (tile.HasBlockade) return false;
+        if (controlsTile(tile)) return false;
+
+        if (isEnemyControlledTile(tile)) return true;
+
+        if (isUnownedTile(tile)) {
+            return hasAdjacentControlledTile(tile.X, tile.Y);
+        }
+
+        return false;
+    }
+
     function canUseHandLocally(item: DraftItem | null | undefined) {
         if (!item) return false;
 
@@ -459,7 +475,11 @@
                 );
 
             case Structure.Watchtower:
-                return tile.Biome !== Biome.River && controlsTile(tile);
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None &&
+                    !isEnemyControlledTile(tile)
+                );
 
             case Structure.Outpost:
             case Structure.City:
@@ -476,18 +496,20 @@
 
         switch (action) {
             case "outpost":
-            case "settlement":
                 return (
                     tile.Biome !== Biome.River &&
                     tile.Structure === Structure.None
                 );
 
-            case "blockade":
+            case "settlement":
                 return (
                     tile.Biome !== Biome.River &&
                     tile.Structure === Structure.None &&
-                    !tile.HasBlockade
+                    controlsTile(tile)
                 );
+
+            case "blockade":
+                return canBuildBlockadeOnTile(tile);
 
             case "city":
                 return (
@@ -931,215 +953,292 @@
                             class="mt-4 rounded-2xl bg-[#f2c36b]/20 p-3 text-center text-sm font-black text-[#f8efe0] ring-1 ring-[#f2c36b]/40"
                         >
                             {selectedBuildAction === "city"
-                                ? "Click your outpost"
-                                : selectedBuildAction === "flood"
-                                  ? "Click a tile without structure"
-                                  : "Click a valid land tile"}
+                                ? "Click your outpost to upgrade it"
+                                : selectedBuildAction === "settlement"
+                                  ? "Click friendly empty land"
+                                  : selectedBuildAction === "blockade"
+                                    ? "Click enemy land or adjacent neutral land"
+                                    : selectedBuildAction === "flood"
+                                      ? "Click a tile without structure"
+                                      : "Click a valid land tile"}
                         </div>
                     {/if}
 
                     <div class="mt-4 grid grid-cols-2 gap-3">
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "outpost"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                canSelectOutpost
-                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                    : "cursor-not-allowed opacity-45",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canSelectOutpost}
-                            title={costTitle(
+                        <BuildActionTooltip
+                            action="outpost"
+                            hint={costTitle(
                                 outpostCost,
                                 canAffordOutpost,
                                 hasOutpostTarget
                                     ? "Build Outpost"
                                     : "No valid target",
                             )}
-                            on:click={() => selectBuildAction("outpost")}
                         >
-                            <div class="text-3xl">⌂</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                Outpost
-                            </div>
-                            <div class="mt-2">
-                                <CostBadge
-                                    wood={outpostCost.wood ?? 0}
-                                    stone={outpostCost.stone ?? 0}
-                                    grain={outpostCost.grain ?? 0}
-                                    relic={outpostCost.relic ?? 0}
-                                    affordable={canAffordOutpost}
-                                />
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "outpost"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                    canSelectOutpost
+                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                        : "cursor-not-allowed opacity-45",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canSelectOutpost}
+                                title={costTitle(
+                                    outpostCost,
+                                    canAffordOutpost,
+                                    hasOutpostTarget
+                                        ? "Build Outpost"
+                                        : "No valid target",
+                                )}
+                                on:click={() => selectBuildAction("outpost")}
+                            >
+                                <div class="text-3xl">⌂</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Outpost
+                                </div>
+                                <div class="mt-2">
+                                    <CostBadge
+                                        wood={outpostCost.wood ?? 0}
+                                        stone={outpostCost.stone ?? 0}
+                                        grain={outpostCost.grain ?? 0}
+                                        relic={outpostCost.relic ?? 0}
+                                        affordable={canAffordOutpost}
+                                    />
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
 
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "settlement"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                canSelectSettlement
-                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                    : "cursor-not-allowed opacity-45",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canSelectSettlement}
-                            title={costTitle(
+                        <BuildActionTooltip
+                            action="settlement"
+                            hint={costTitle(
                                 settlementCost,
                                 canAffordSettlement,
                                 hasSettlementTarget
                                     ? "Build Settlement"
-                                    : "No valid target",
+                                    : "Needs friendly empty land",
                             )}
-                            on:click={() => selectBuildAction("settlement")}
                         >
-                            <div class="text-3xl">◈</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                Settlement
-                            </div>
-                            <div class="mt-2">
-                                <CostBadge
-                                    wood={settlementCost.wood ?? 0}
-                                    stone={settlementCost.stone ?? 0}
-                                    grain={settlementCost.grain ?? 0}
-                                    relic={settlementCost.relic ?? 0}
-                                    affordable={canAffordSettlement}
-                                />
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "settlement"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                    canSelectSettlement
+                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                        : "cursor-not-allowed opacity-45",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canSelectSettlement}
+                                title={costTitle(
+                                    settlementCost,
+                                    canAffordSettlement,
+                                    hasSettlementTarget
+                                        ? "Build Settlement"
+                                        : "Needs friendly empty land",
+                                )}
+                                on:click={() => selectBuildAction("settlement")}
+                            >
+                                <div class="text-3xl">◈</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Settlement
+                                </div>
+                                <div class="mt-2">
+                                    <CostBadge
+                                        wood={settlementCost.wood ?? 0}
+                                        stone={settlementCost.stone ?? 0}
+                                        grain={settlementCost.grain ?? 0}
+                                        relic={settlementCost.relic ?? 0}
+                                        affordable={canAffordSettlement}
+                                    />
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
 
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "city"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                canSelectCity
-                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                    : "cursor-not-allowed opacity-45",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canSelectCity}
-                            title={costTitle(
+                        <BuildActionTooltip
+                            action="city"
+                            hint={costTitle(
                                 cityCost,
                                 canAffordCity,
                                 hasCityTarget
-                                    ? "Upgrade City"
+                                    ? "Upgrade Outpost to City"
                                     : "Requires your outpost",
                             )}
-                            on:click={() => selectBuildAction("city")}
                         >
-                            <div class="text-3xl">▦</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                City
-                            </div>
-                            <div class="mt-2">
-                                <CostBadge
-                                    wood={cityCost.wood ?? 0}
-                                    stone={cityCost.stone ?? 0}
-                                    grain={cityCost.grain ?? 0}
-                                    relic={cityCost.relic ?? 0}
-                                    affordable={canAffordCity}
-                                />
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "city"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                    canSelectCity
+                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                        : "cursor-not-allowed opacity-45",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canSelectCity}
+                                title={costTitle(
+                                    cityCost,
+                                    canAffordCity,
+                                    hasCityTarget
+                                        ? "Upgrade Outpost to City"
+                                        : "Requires your outpost",
+                                )}
+                                on:click={() => selectBuildAction("city")}
+                            >
+                                <div class="text-3xl">▦</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    City
+                                </div>
+                                <div class="mt-2">
+                                    <CostBadge
+                                        wood={cityCost.wood ?? 0}
+                                        stone={cityCost.stone ?? 0}
+                                        grain={cityCost.grain ?? 0}
+                                        relic={cityCost.relic ?? 0}
+                                        affordable={canAffordCity}
+                                    />
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
 
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "blockade"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                canSelectBlockade
-                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                    : "cursor-not-allowed opacity-45",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canSelectBlockade}
-                            title={costTitle(
+                        <BuildActionTooltip
+                            action="blockade"
+                            hint={costTitle(
                                 blockadeCost,
                                 canAffordBlockade,
                                 hasBlockadeTarget
                                     ? "Build Blockade"
-                                    : "No valid target",
+                                    : "No valid blockade target",
                             )}
-                            on:click={() => selectBuildAction("blockade")}
                         >
-                            <div class="text-3xl">✕</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                Blockade
-                            </div>
-                            <div class="mt-2">
-                                <CostBadge
-                                    wood={blockadeCost.wood ?? 0}
-                                    stone={blockadeCost.stone ?? 0}
-                                    grain={blockadeCost.grain ?? 0}
-                                    affordable={canAffordBlockade}
-                                />
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "blockade"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                    canSelectBlockade
+                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                        : "cursor-not-allowed opacity-45",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canSelectBlockade}
+                                title={costTitle(
+                                    blockadeCost,
+                                    canAffordBlockade,
+                                    hasBlockadeTarget
+                                        ? "Build Blockade"
+                                        : "No valid blockade target",
+                                )}
+                                on:click={() => selectBuildAction("blockade")}
+                            >
+                                <div class="text-3xl">✕</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Blockade
+                                </div>
+                                <div class="mt-2">
+                                    <CostBadge
+                                        wood={blockadeCost.wood ?? 0}
+                                        stone={blockadeCost.stone ?? 0}
+                                        grain={blockadeCost.grain ?? 0}
+                                        relic={blockadeCost.relic ?? 0}
+                                        affordable={canAffordBlockade}
+                                    />
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
                     </div>
 
                     <div class="mt-3 grid grid-cols-2 gap-3">
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                canBuyFloodworks
-                                    ? "cursor-pointer bg-[#6eb8c5] text-[#102b38] hover:bg-[#85d8d1]"
-                                    : "cursor-not-allowed bg-[#f8efe0]/10 text-[#fff7e8] opacity-45 ring-1 ring-[#f8efe0]/20",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canBuyFloodworks}
-                            title={costTitle(
+                        <BuildActionTooltip
+                            action="floodworks"
+                            hint={costTitle(
                                 floodworksCost,
                                 canAffordFloodworks,
                                 "Buy 3 flood tokens",
                             )}
-                            on:click={() => onBuild("floodworks", 0, 0)}
                         >
-                            <div class="text-3xl">≈</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                Floodworks
-                            </div>
-                            <div class="mt-2">
-                                <CostBadge
-                                    wood={floodworksCost.wood ?? 0}
-                                    stone={floodworksCost.stone ?? 0}
-                                    grain={floodworksCost.grain ?? 0}
-                                    relic={floodworksCost.relic ?? 0}
-                                    affordable={canAffordFloodworks}
-                                />
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    canBuyFloodworks
+                                        ? "cursor-pointer bg-[#6eb8c5] text-[#102b38] hover:bg-[#85d8d1]"
+                                        : "cursor-not-allowed bg-[#f8efe0]/10 text-[#fff7e8] opacity-45 ring-1 ring-[#f8efe0]/20",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canBuyFloodworks}
+                                title={costTitle(
+                                    floodworksCost,
+                                    canAffordFloodworks,
+                                    "Buy 3 flood tokens",
+                                )}
+                                on:click={() => onBuild("floodworks", 0, 0)}
+                            >
+                                <div class="text-3xl">≈</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Floodworks
+                                </div>
+                                <div class="mt-2">
+                                    <CostBadge
+                                        wood={floodworksCost.wood ?? 0}
+                                        stone={floodworksCost.stone ?? 0}
+                                        grain={floodworksCost.grain ?? 0}
+                                        relic={floodworksCost.relic ?? 0}
+                                        affordable={canAffordFloodworks}
+                                    />
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
 
-                        <button
-                            class={[
-                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                selectedBuildAction === "flood"
-                                    ? "bg-[#f2c36b] text-[#142833]"
-                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                canUseFloodToken
-                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                    : "cursor-not-allowed opacity-45",
-                            ].join(" ")}
-                            type="button"
-                            disabled={!canUseFloodToken}
-                            title={canUseFloodToken
+                        <BuildActionTooltip
+                            action="flood"
+                            hint={canUseFloodToken
                                 ? "Convert one tile to river"
                                 : "Need flood token and valid target"}
-                            on:click={() => selectBuildAction("flood")}
                         >
-                            <div class="text-3xl">≈</div>
-                            <div class="mt-1 text-xs uppercase tracking-wider">
-                                Flood
-                            </div>
-                            <div class="mt-2 text-xs font-black">
-                                Tokens: {me?.FloodTokens ?? 0}
-                            </div>
-                        </button>
+                            <button
+                                class={[
+                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                    selectedBuildAction === "flood"
+                                        ? "bg-[#f2c36b] text-[#142833]"
+                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                    canUseFloodToken
+                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                        : "cursor-not-allowed opacity-45",
+                                ].join(" ")}
+                                type="button"
+                                disabled={!canUseFloodToken}
+                                title={canUseFloodToken
+                                    ? "Convert one tile to river"
+                                    : "Need flood token and valid target"}
+                                on:click={() => selectBuildAction("flood")}
+                            >
+                                <div class="text-3xl">≈</div>
+                                <div
+                                    class="mt-1 text-xs uppercase tracking-wider"
+                                >
+                                    Flood
+                                </div>
+                                <div class="mt-2 text-xs font-black">
+                                    Tokens: {me?.FloodTokens ?? 0}
+                                </div>
+                            </button>
+                        </BuildActionTooltip>
                     </div>
 
                     <button
