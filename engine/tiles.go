@@ -9,7 +9,7 @@ const (
 	Wood
 	Stone
 	Grain
-	Crystal
+	Relic
 )
 
 type Biome uint
@@ -20,7 +20,7 @@ const (
 	Mountain
 	Plain
 	River
-	CrystalField
+	Ruins
 )
 
 func (b Biome) Resource() (Resource, error) {
@@ -31,8 +31,8 @@ func (b Biome) Resource() (Resource, error) {
 		return Stone, nil
 	case Plain:
 		return Grain, nil
-	case CrystalField:
-		return Crystal, nil
+	case Ruins:
+		return Relic, nil
 	case River:
 		return NoneResource, nil
 	default:

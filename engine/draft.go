@@ -8,8 +8,7 @@ import (
 type DraftKind uint
 
 const (
-	DraftTile    DraftKind = iota
-	DraftUpgrade           // deprecated; kept for enum stability
+	DraftTile DraftKind = iota
 	DraftStructure
 	DraftAction
 )
@@ -64,7 +63,7 @@ func GenerateDraftDeck() []DraftItem {
 	addTile(Forest, 12)
 	addTile(Mountain, 12)
 	addTile(Plain, 12)
-	addTile(CrystalField, 6)
+	addTile(Ruins, 6)
 	addTile(River, 8)
 
 	// Draft-only structures.
@@ -189,7 +188,7 @@ func (gs *GameState) actionRaid(playerId PlayerId, targetPlayerId PlayerId, rng 
 
 	pool := make([]Resource, 0)
 
-	for _, resource := range []Resource{Wood, Stone, Grain, Crystal} {
+	for _, resource := range []Resource{Wood, Stone, Grain, Relic} {
 		for range target.Resources[resource] {
 			pool = append(pool, resource)
 		}

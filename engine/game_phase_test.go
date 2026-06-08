@@ -32,7 +32,7 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 
 	// First picker drafts 3 cards.
 	firstPicker := gs.CurrentPlayer
-	for i := 0; i < gs.CardsPerPlayerPerRound(); i++ {
+	for i := 0; i < CardsPerDraftTurn; i++ {
 		if err := gs.PickMarketItem(firstPicker, 0); err != nil {
 			t.Fatalf("first picker pick %d failed: %v", i+1, err)
 		}
@@ -48,7 +48,7 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 	}
 
 	// Second picker drafts 3 cards.
-	for i := 0; i < gs.CardsPerPlayerPerRound(); i++ {
+	for i := 0; i < CardsPerDraftTurn; i++ {
 		if err := gs.PickMarketItem(secondPicker, 0); err != nil {
 			t.Fatalf("second picker pick %d failed: %v", i+1, err)
 		}

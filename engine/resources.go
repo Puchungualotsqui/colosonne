@@ -72,11 +72,11 @@ func (gs *GameState) BlockadeCost() map[Resource]uint {
 func (gs *GameState) FloodworksCost(playerId PlayerId) map[Resource]uint {
 	player, err := gs.playerById(playerId)
 	if err != nil {
-		return map[Resource]uint{Crystal: 999999}
+		return map[Resource]uint{Relic: 999999}
 	}
 
 	return map[Resource]uint{
-		Crystal: 3 + player.FloodworksBought*2,
+		Relic: 3 + player.FloodworksBought*2,
 	}
 }
 

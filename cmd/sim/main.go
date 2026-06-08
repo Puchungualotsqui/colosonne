@@ -27,7 +27,7 @@ func main() {
 		{Kind: engine.DraftTile, Biome: engine.Forest},
 		{Kind: engine.DraftTile, Biome: engine.Mountain},
 		{Kind: engine.DraftTile, Biome: engine.Plain},
-		{Kind: engine.DraftTile, Biome: engine.CrystalField},
+		{Kind: engine.DraftTile, Biome: engine.Ruins},
 		{Kind: engine.DraftTile, Biome: engine.Forest},
 		{Kind: engine.DraftTile, Biome: engine.Mountain},
 		{Kind: engine.DraftAction, Action: engine.Expansion},
@@ -68,7 +68,7 @@ func handlePick(reader *bufio.Reader, gs *engine.GameState) {
 	fmt.Printf("\nPlayer %d, pick a market item. Cards drafted: %d/%d\n",
 		playerId,
 		len(player.Hand),
-		gs.CardsPerPlayerPerRound(),
+		engine.CardsPerDraftTurn,
 	)
 
 	printMarket(gs)
@@ -199,9 +199,6 @@ func useHandItem(
 			return fmt.Errorf("unknown action")
 		}
 
-	case engine.DraftUpgrade:
-		return gs.DiscardDraftItem(playerId, handIndex)
-
 	default:
 		return fmt.Errorf("unknown draft item")
 	}
@@ -322,13 +319,13 @@ func printPlayers(gs *engine.GameState) {
 
 	for _, p := range gs.Players {
 		fmt.Printf(
-			"  Player %d | VP:%d | Wood:%d Stone:%d Grain:%d Crystal:%d | Flood:%d | Floodworks:%d\n",
+			"  Player %d | VP:%d | Wood:%d Stone:%d Grain:%d Relic:%d | Flood:%d | Floodworks:%d\n",
 			p.Id,
 			gs.VictoryPoints(p.Id),
 			p.Resources[engine.Wood],
 			p.Resources[engine.Stone],
 			p.Resources[engine.Grain],
-			p.Resources[engine.Crystal],
+			p.Resources[engine.Relic],
 			p.FloodTokens,
 			p.FloodworksBought,
 		)
@@ -500,8 +497,8 @@ func describeBiome(b engine.Biome) string {
 		return "Plain"
 	case engine.River:
 		return "River"
-	case engine.CrystalField:
-		return "CrystalField"
+	case engine.Ruins:
+		return "Ruins"
 	case engine.NoneBiome:
 		return "NoneBiome"
 	default:
@@ -532,9 +529,6 @@ func describeDraftItem(item engine.DraftItem) string {
 	switch item.Kind {
 	case engine.DraftTile:
 		return fmt.Sprintf("Tile(%s)", describeBiome(item.Biome))
-
-	case engine.DraftUpgrade:
-		return "DeprecatedUpgrade"
 
 	case engine.DraftStructure:
 		return fmt.Sprintf("Structure(%s)", describeStructure(item.Structure))

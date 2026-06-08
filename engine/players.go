@@ -38,7 +38,7 @@ func (p *Player) ensureResources() {
 		p.Resources[Grain] = 0
 	}
 
-	if _, ok := p.Resources[Crystal]; !ok {
-		p.Resources[Crystal] = 0
+	if _, ok := p.Resources[Relic]; !ok {
+		p.Resources[Relic] = 0
 	}
 }

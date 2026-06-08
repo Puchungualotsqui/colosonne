@@ -37,9 +37,6 @@ func (gs *GameState) CanUseHandItem(playerId PlayerId, handIndex int) bool {
 	case DraftAction:
 		return gs.canUseActionAnywhere(playerId, item.Action)
 
-	case DraftUpgrade:
-		return false
-
 	default:
 		return false
 	}
@@ -176,7 +173,7 @@ func (gs *GameState) hasRaidTarget(playerId PlayerId) bool {
 
 		player.ensureResources()
 
-		if player.Resources[Wood]+player.Resources[Stone]+player.Resources[Grain]+player.Resources[Crystal] > 0 {
+		if player.Resources[Wood]+player.Resources[Stone]+player.Resources[Grain]+player.Resources[Relic] > 0 {
 			return true
 		}
 	}

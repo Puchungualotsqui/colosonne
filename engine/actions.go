@@ -173,9 +173,6 @@ func (gs *GameState) UseDraftItem(
 			return err
 		}
 
-	case DraftUpgrade:
-		return errors.New("upgrade cards are no longer used")
-
 	default:
 		return errors.New("unknown draft item kind")
 	}

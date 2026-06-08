@@ -28,6 +28,9 @@ type GameState struct {
 	Round           uint
 }
 
+const CardsPerDraftTurn = 3
+const MarketSize = 6
+
 func NewGameState(players []Player, rng *rand.Rand) *GameState {
 	deck := GenerateDraftDeck()
 	ShuffleDraftItems(deck, rng)
@@ -42,7 +45,7 @@ func NewGameState(players []Player, rng *rand.Rand) *GameState {
 		if players[i].Resources[Wood] == 0 &&
 			players[i].Resources[Stone] == 0 &&
 			players[i].Resources[Grain] == 0 &&
-			players[i].Resources[Crystal] == 0 {
+			players[i].Resources[Relic] == 0 {
 			players[i].Resources[Wood] = 1
 		}
 	}
@@ -111,26 +114,16 @@ func homeCoordinates(playerCount int) []homeCoord {
 	return coords
 }
 
-func (gs *GameState) CardsPerPlayerPerRound() int {
-	return 3
-}
-
-func (gs *GameState) MarketSize() int {
-	return len(gs.Players)*3 + 3
-}
-
 func (gs *GameState) RequiredTileCardsInMarket() int {
-	playerCount := len(gs.Players)
-
-	if playerCount == 0 {
+	if len(gs.Players) == 0 {
 		return 0
 	}
 
-	if gs.Round <= 3 {
-		return playerCount * 2
+	if gs.Round <= 2 {
+		return 3
 	}
 
-	return playerCount
+	return 2
 }
 
 func (gs *GameState) CountTileCardsInMarket() int {
@@ -168,10 +161,9 @@ func (gs *GameState) drawTopFromDeck() (DraftItem, bool) {
 }
 
 func (gs *GameState) RefillMarket() {
-	targetSize := gs.MarketSize()
 	requiredTiles := gs.RequiredTileCardsInMarket()
 
-	for len(gs.Market) < targetSize && gs.CountTileCardsInMarket() < requiredTiles {
+	for len(gs.Market) < MarketSize && gs.CountTileCardsInMarket() < requiredTiles {
 		item, ok := gs.drawFirstTileFromDeck()
 		if !ok {
 			break
@@ -180,7 +172,7 @@ func (gs *GameState) RefillMarket() {
 		gs.Market = append(gs.Market, item)
 	}
 
-	for len(gs.Market) < targetSize {
+	for len(gs.Market) < MarketSize {
 		item, ok := gs.drawTopFromDeck()
 		if !ok {
 			break
@@ -254,6 +246,11 @@ func (gs *GameState) beginPhase(phase GamePhase) {
 
 	switch phase {
 	case PhasePick:
+		// Refill only when a fresh draft turn sequence begins.
+		// This matters after a full round ends, because the last picker may
+		// have left the market partially empty.
+		gs.RefillMarket()
+
 		order := gs.PickOrder()
 		if len(order) > 0 {
 			gs.CurrentPlayer = order[0]
@@ -285,7 +282,7 @@ func (gs *GameState) PhaseCompleted() {
 	switch gs.CurrentPhase {
 	case PhasePick:
 		player, err := gs.playerById(gs.CurrentPlayer)
-		if err == nil && len(player.Hand) < gs.CardsPerPlayerPerRound() && len(gs.Market) > 0 {
+		if err == nil && len(player.Hand) < CardsPerDraftTurn && len(gs.Market) > 0 {
 			return
 		}
 
@@ -294,6 +291,12 @@ func (gs *GameState) PhaseCompleted() {
 		if gs.TurnIndex+1 < len(order) {
 			gs.TurnIndex++
 			gs.CurrentPlayer = order[gs.TurnIndex]
+
+			// Refill only when the next player starts drafting.
+			// This preserves the cards left by the previous player, and fills
+			// only the empty market slots.
+			gs.RefillMarket()
+
 			return
 		}
 
@@ -340,17 +343,24 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 		return errors.New("player not found")
 	}
 
-	if len(gs.Players[playerIndex].Hand) >= gs.CardsPerPlayerPerRound() {
-		return errors.New("player already drafted enough cards this round")
+	const maxHandSize = 3
+
+	if len(gs.Players[playerIndex].Hand) >= maxHandSize {
+		return errors.New("player already has 3 drafted items")
 	}
 
 	item := gs.Market[marketIndex]
 	gs.Players[playerIndex].Hand = append(gs.Players[playerIndex].Hand, item)
 
 	gs.Market = append(gs.Market[:marketIndex], gs.Market[marketIndex+1:]...)
+
+	// Important:
+	// Refill immediately so the market never keeps an empty slot.
 	gs.RefillMarket()
 
-	gs.PhaseCompleted()
+	if len(gs.Players[playerIndex].Hand) >= maxHandSize {
+		gs.PhaseCompleted()
+	}
 
 	return nil
 }

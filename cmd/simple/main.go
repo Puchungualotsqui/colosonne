@@ -23,7 +23,7 @@ func main() {
 		{Kind: engine.DraftTile, Biome: engine.Forest},
 		{Kind: engine.DraftTile, Biome: engine.Mountain},
 		{Kind: engine.DraftTile, Biome: engine.Plain},
-		{Kind: engine.DraftTile, Biome: engine.CrystalField},
+		{Kind: engine.DraftTile, Biome: engine.Ruins},
 		{Kind: engine.DraftTile, Biome: engine.Forest},
 		{Kind: engine.DraftTile, Biome: engine.Mountain},
 	}
@@ -149,13 +149,13 @@ func printPlayers(gs *engine.GameState) {
 		}
 
 		fmt.Printf(
-			"  Player %d | Hand: %s | Wood:%d Stone:%d Grain:%d Crystal:%d | Flood:%d\n",
+			"  Player %d | Hand: %s | Wood:%d Stone:%d Grain:%d Relic:%d | Flood:%d\n",
 			p.Id,
 			hand,
 			p.Resources[engine.Wood],
 			p.Resources[engine.Stone],
 			p.Resources[engine.Grain],
-			p.Resources[engine.Crystal],
+			p.Resources[engine.Relic],
 			p.FloodTokens,
 		)
 	}
@@ -238,8 +238,8 @@ func describeBiome(b engine.Biome) string {
 		return "Plain"
 	case engine.River:
 		return "River"
-	case engine.CrystalField:
-		return "CrystalField"
+	case engine.Ruins:
+		return "Ruins"
 	case engine.NoneBiome:
 		return "NoneBiome"
 	default:
@@ -255,8 +255,8 @@ func describeResource(r engine.Resource) string {
 		return "Stone"
 	case engine.Grain:
 		return "Grain"
-	case engine.Crystal:
-		return "Crystal"
+	case engine.Relic:
+		return "Relic"
 	case engine.NoneResource:
 		return "NoneResource"
 	default:
@@ -287,9 +287,6 @@ func describeDraftItem(item engine.DraftItem) string {
 	switch item.Kind {
 	case engine.DraftTile:
 		return fmt.Sprintf("Tile(%s)", describeBiome(item.Biome))
-
-	case engine.DraftUpgrade:
-		return "DeprecatedUpgrade"
 
 	case engine.DraftStructure:
 		return fmt.Sprintf("Structure(%s)", describeStructure(item.Structure))
