@@ -221,6 +221,20 @@
             roomId,
             playerId,
             role,
+            currentPlayer: game?.CurrentPlayer,
+            currentPhase: game?.CurrentPhase,
+            resources: game?.Players.find((p) => p.Id === playerId)?.Resources,
+            activeOutpostCountFrontend: game?.Map.filter(
+                (tile) =>
+                    tile.Structure === 1 &&
+                    tile.StructureOwner === playerId &&
+                    tile.HasOwner &&
+                    tile.Owner === playerId,
+            ).length,
+            allOutpostCountFrontend: game?.Map.filter(
+                (tile) =>
+                    tile.Structure === 1 && tile.StructureOwner === playerId,
+            ).length,
         });
 
         socket?.send("build", { action, x, y });

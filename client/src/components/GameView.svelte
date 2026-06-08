@@ -5,6 +5,7 @@
     import Market from "./Market.svelte";
     import HandCard from "./HandCard.svelte";
     import MiniHandCard from "./MiniHandCard.svelte";
+    import CardTooltip from "./CardTooltip.svelte";
     import {
         Action,
         Biome,
@@ -106,19 +107,19 @@
     let floodworksCost: Cost = {};
 
     $: outpostCost = {
-        wood: 2 + builtCount(Structure.Outpost),
+        wood: 2 + activeBuiltCount(Structure.Outpost),
         stone: 1,
     };
 
     $: cityCost = {
         stone: 2,
-        grain: 3 + builtCount(Structure.City),
+        grain: 3 + activeBuiltCount(Structure.City),
     };
 
     $: settlementCost = {
         wood: 2,
         stone: 2,
-        grain: 2 + builtCount(Structure.Settlement),
+        grain: 2 + activeBuiltCount(Structure.Settlement),
     };
 
     $: blockadeCost = { wood: 1, grain: 1 };
@@ -243,11 +244,20 @@
         };
     }
 
-    function builtCount(structure: Structure) {
+    function structureActiveForPlayer(tile: {
+        HasOwner: boolean;
+        Owner: number;
+        StructureOwner: number;
+    }) {
+        return tile.HasOwner && tile.Owner === tile.StructureOwner;
+    }
+
+    function activeBuiltCount(structure: Structure) {
         return game.Map.filter(
             (tile) =>
                 tile.Structure === structure &&
-                tile.StructureOwner === playerId,
+                tile.StructureOwner === playerId &&
+                structureActiveForPlayer(tile),
         ).length;
     }
 
@@ -802,18 +812,26 @@
                     {#if myHand.length > 0}
                         <div class="mt-4 grid gap-3">
                             {#each myHand as card, index}
-                                <button
-                                    class={[
-                                        "cursor-pointer rounded-2xl text-left transition hover:-translate-y-0.5",
-                                        selectedHandIndex === index
-                                            ? "ring-4 ring-[#f2c36b]"
-                                            : "ring-1 ring-transparent",
-                                    ].join(" ")}
-                                    type="button"
-                                    on:click={() => (selectedHandIndex = index)}
+                                <CardTooltip
+                                    item={card}
+                                    hint={selectedHandIndex === index
+                                        ? "Selected"
+                                        : "Click to select"}
                                 >
-                                    <HandCard item={card} size="md" />
-                                </button>
+                                    <button
+                                        class={[
+                                            "cursor-pointer rounded-2xl text-left transition hover:-translate-y-0.5",
+                                            selectedHandIndex === index
+                                                ? "ring-4 ring-[#f2c36b]"
+                                                : "ring-1 ring-transparent",
+                                        ].join(" ")}
+                                        type="button"
+                                        on:click={() =>
+                                            (selectedHandIndex = index)}
+                                    >
+                                        <HandCard item={card} size="md" />
+                                    </button>
+                                </CardTooltip>
                             {/each}
                         </div>
 
