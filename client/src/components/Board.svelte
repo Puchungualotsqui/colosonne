@@ -414,9 +414,20 @@
             }
 
             if (tile.Biome === Biome.River) {
-                return tile.Structure === Structure.Bridge
-                    ? "Bridged river"
-                    : "River blocks normal control";
+                if (tile.Structure === Structure.Bridge) {
+                    return "Bridged river";
+                }
+
+                if (
+                    selectedHandItem?.Kind === DraftKind.Structure &&
+                    selectedHandItem.Structure === Structure.Bridge
+                ) {
+                    return hasAdjacentControlledTile(tile.X, tile.Y)
+                        ? "Build Bridge"
+                        : "Bridge needs adjacent controlled tile";
+                }
+
+                return "River blocks normal control";
             }
 
             if (tile.Structure !== Structure.None) {
@@ -519,7 +530,7 @@
 </script>
 
 <section
-    class="min-w-0 overflow-hidden rounded-[34px] bg-[#caa66d] p-4 shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
+    class="min-h-[calc(100vh-132px)] min-w-0 overflow-hidden rounded-[34px] bg-[#caa66d] p-4 shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
 >
     <div
         class="rounded-[26px] border border-[#6b4a2f]/35 bg-[#ead7aa] p-4 shadow-inner"
@@ -535,7 +546,7 @@
         </div>
 
         <div
-            class="max-h-[calc(100vh-220px)] max-w-full overflow-auto rounded-2xl bg-[#d9c291] p-4 shadow-inner"
+            class="h-[calc(100vh-230px)] max-w-full overflow-auto rounded-2xl bg-[#d9c291] p-4 shadow-inner"
         >
             <div
                 class="relative"

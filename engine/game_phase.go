@@ -354,10 +354,6 @@ func (gs *GameState) PickMarketItem(playerId PlayerId, marketIndex int) error {
 
 	gs.Market = append(gs.Market[:marketIndex], gs.Market[marketIndex+1:]...)
 
-	// Important:
-	// Refill immediately so the market never keeps an empty slot.
-	gs.RefillMarket()
-
 	if len(gs.Players[playerIndex].Hand) >= maxHandSize {
 		gs.PhaseCompleted()
 	}

@@ -67,7 +67,7 @@ export type DraftItem = {
   Action: Action;
 };
 
-export type MarketSlot = DraftItem | null;
+export type MarketSlot = DraftItem;
 
 export type Player = {
   Id: number;
@@ -103,9 +103,9 @@ export type GameState = {
   Map: Tile[];
   Deck: DraftItem[];
 
-  // Use null to represent a picked/empty market slot.
-  // This allows the UI to show the empty card slot before refill.
-  Market: MarketSlot[];
+  // The backend shrinks the market during a player's draft turn.
+  // Example: 6 -> 5 -> 4 -> 3, then refills when the next player starts drafting.
+  Market: DraftItem[];
 
   CurrentPlayer: number;
   CurrentPhase: GamePhase;

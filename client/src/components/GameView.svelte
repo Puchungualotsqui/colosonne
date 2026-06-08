@@ -717,17 +717,19 @@
             </section>
         </aside>
 
-        <Board
-            {game}
-            {playerId}
-            {role}
-            {selectedBuildAction}
-            {selectedHandIndex}
-            {selectedHandItem}
-            {onPlaceTile}
-            {onUseDraft}
-            onBuild={handleBuild}
-        />
+        <div class="min-h-0 min-w-0 lg:sticky lg:top-24 lg:self-start">
+            <Board
+                {game}
+                {playerId}
+                {role}
+                {selectedBuildAction}
+                {selectedHandIndex}
+                {selectedHandItem}
+                {onPlaceTile}
+                {onUseDraft}
+                onBuild={handleBuild}
+            />
+        </div>
 
         <aside
             class="min-w-0 space-y-5 lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto lg:pr-1"

@@ -9,19 +9,12 @@
 
     export let onPick: (marketIndex: number) => void;
 
-    const MARKET_SIZE = 6;
     const MAX_HAND = 3;
 
     $: me = game.Players.find((p) => p.Id === playerId);
     $: hand = me?.Hand ?? [];
     $: handCount = hand.length;
-
-    $: marketSlots = Array.from(
-        { length: MARKET_SIZE },
-        (_, index) => game.Market[index] ?? null,
-    );
-
-    $: filledCount = marketSlots.filter(Boolean).length;
+    $: remainingPicks = Math.max(0, MAX_HAND - handCount);
 
     $: canPick =
         role === "player" &&
@@ -38,6 +31,7 @@
             currentPlayer: game.CurrentPlayer,
             currentPhase: game.CurrentPhase,
             handCount,
+            marketSize: game.Market.length,
             item,
         });
 
@@ -61,65 +55,43 @@
             ].join(" ")}
         >
             {#if canPick}
-                {handCount}/3 hand
+                Pick {remainingPicks}
+            {:else if game.CurrentPhase === GamePhase.Pick}
+                {game.Market.length} left
             {:else}
-                {filledCount}/6 cards
+                {game.Market.length} cards
             {/if}
         </div>
     </div>
 
-    <div class="mt-4 grid grid-cols-2 gap-3">
-        {#each marketSlots as item, index (index)}
-            {#if item}
-                <DraftCard
-                    {item}
-                    {index}
-                    disabled={!canPick}
-                    onPick={(pickedIndex) => pick(pickedIndex, item)}
-                />
+    <div class="mt-2 text-xs font-bold text-[#9fc9c5]">
+        {#if game.CurrentPhase === GamePhase.Pick}
+            {#if canPick}
+                Choose up to 3 cards. The market refills for the next player.
             {:else}
-                <div
-                    class="market-empty-slot grid h-32 place-items-center rounded-2xl border-2 border-dashed border-[#f8efe0]/20 bg-[#f8efe0]/6 p-3 text-center shadow-[0_6px_0_rgba(0,0,0,0.12)]"
-                >
-                    <div>
-                        <div
-                            class="mx-auto grid h-10 w-10 place-items-center rounded-xl bg-[#f8efe0]/10 text-2xl font-black text-[#9fc9c5]"
-                        >
-                            —
-                        </div>
-
-                        <div
-                            class="mt-3 text-xs font-black uppercase tracking-[0.2em] text-[#9fc9c5]"
-                        >
-                            Empty
-                        </div>
-
-                        <div
-                            class="mt-1 text-[10px] font-bold text-[#9fc9c5]/70"
-                        >
-                            Refills next pick
-                        </div>
-                    </div>
-                </div>
+                Waiting for P{game.CurrentPlayer} to draft.
             {/if}
+        {:else}
+            Market refills at the next draft phase.
+        {/if}
+    </div>
+
+    <div class="mt-4 grid grid-cols-2 gap-3">
+        {#each game.Market as item, index (index)}
+            <DraftCard
+                {item}
+                {index}
+                disabled={!canPick}
+                onPick={(pickedIndex) => pick(pickedIndex, item)}
+            />
         {/each}
+
+        {#if game.Market.length === 0}
+            <div
+                class="col-span-2 rounded-2xl border-2 border-dashed border-[#f8efe0]/20 bg-[#f8efe0]/6 p-5 text-center text-sm font-bold text-[#9fc9c5]"
+            >
+                Market empty
+            </div>
+        {/if}
     </div>
 </section>
-
-<style>
-    .market-empty-slot {
-        animation: empty-slot-in 180ms ease-out;
-    }
-
-    @keyframes empty-slot-in {
-        0% {
-            transform: scale(0.96);
-            opacity: 0;
-        }
-
-        100% {
-            transform: scale(1);
-            opacity: 1;
-        }
-    }
-</style>
