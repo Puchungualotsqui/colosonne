@@ -20,6 +20,8 @@
                 return "Plain";
             case Biome.River:
                 return "River";
+            case Biome.Ruins:
+                return "Ruins";
             default:
                 return "Unknown";
         }
@@ -31,12 +33,12 @@
                 return "Bridge";
             case Structure.Watchtower:
                 return "Tower";
-            case Structure.Road:
-                return "Road";
             case Structure.Outpost:
                 return "Outpost";
             case Structure.City:
                 return "City";
+            case Structure.Settlement:
+                return "Settlement";
             default:
                 return "Structure";
         }
@@ -50,6 +52,8 @@
                 return "Reinforce";
             case Action.Expansion:
                 return "Expand";
+            case Action.Raid:
+                return "Raid";
             default:
                 return "Action";
         }
@@ -61,8 +65,6 @@
         switch (item.Kind) {
             case DraftKind.Tile:
                 return biomeName(item.Biome);
-            case DraftKind.Upgrade:
-                return "Upgrade";
             case DraftKind.Structure:
                 return structureName(item.Structure);
             case DraftKind.Action:
@@ -78,8 +80,6 @@
         switch (item.Kind) {
             case DraftKind.Tile:
                 return "Tile";
-            case DraftKind.Upgrade:
-                return "Upgrade";
             case DraftKind.Structure:
                 return "Build";
             case DraftKind.Action:
@@ -102,10 +102,10 @@
                     return "◆";
                 case Biome.River:
                     return "≈";
+                case Biome.Ruins:
+                    return "✧";
             }
         }
-
-        if (item.Kind === DraftKind.Upgrade) return "↑";
 
         if (item.Kind === DraftKind.Structure) {
             switch (item.Structure) {
@@ -113,12 +113,12 @@
                     return "⌂";
                 case Structure.City:
                     return "▦";
-                case Structure.Road:
-                    return "━";
                 case Structure.Bridge:
                     return "⌒";
                 case Structure.Watchtower:
                     return "♜";
+                case Structure.Settlement:
+                    return "◈";
             }
         }
 
@@ -130,6 +130,8 @@
                     return "+";
                 case Action.Expansion:
                     return "⇱";
+                case Action.Raid:
+                    return "☠";
             }
         }
 
@@ -151,11 +153,9 @@
                     return "border-[#9b7034] bg-[#d9b56a] text-[#142833]";
                 case Biome.River:
                     return "border-[#327b8d] bg-[#6eb8c5] text-[#102b38]";
+                case Biome.Ruins:
+                    return "border-[#6d4c9b] bg-[#9b79c9] text-[#142833]";
             }
-        }
-
-        if (item.Kind === DraftKind.Upgrade) {
-            return "border-[#9b7034] bg-[#f2c36b] text-[#142833]";
         }
 
         if (item.Kind === DraftKind.Structure) {

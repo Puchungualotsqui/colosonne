@@ -2,6 +2,7 @@
     import Landing, { type LandingUser } from "./components/Landing.svelte";
     import Lobby from "./components/Lobby.svelte";
     import type {
+        BuildAction,
         GameState,
         RoomIdentity,
         RoomState,
@@ -150,7 +151,6 @@
                 break;
 
             case "state":
-                // Backward compatibility if your backend still sends "state".
                 roomId = msg.data.roomId;
                 game = msg.data.game;
                 loading = false;
@@ -158,7 +158,6 @@
                 break;
 
             case "room_waiting":
-                // Backward compatibility if your backend still sends "room_waiting".
                 roomId = msg.data.roomId;
                 game = null;
                 loading = false;
@@ -213,6 +212,19 @@
     function signUp() {
         window.location.href = "/auth/google/start";
     }
+
+    function sendBuild(action: BuildAction, x: number, y: number) {
+        debugLog("app.build.send", {
+            action,
+            x,
+            y,
+            roomId,
+            playerId,
+            role,
+        });
+
+        socket?.send("build", { action, x, y });
+    }
 </script>
 
 {#if !inRoom}
@@ -248,23 +260,20 @@
         {role}
         {error}
         onPick={(marketIndex) => socket?.send("pick", { marketIndex })}
-        onPlaceTile={(x, y) => socket?.send("place_tile", { x, y })}
-        onUseDraft={(x, y) => socket?.send("use_draft", { x, y })}
-        onPassPlace={() => socket?.send("pass_place", {})}
-        onBuild={(action, x, y) => {
-            debugLog("app.build.send", {
-                action,
+        onPlaceTile={(handIndex, x, y) =>
+            socket?.send("place_tile", { handIndex, x, y })}
+        onUseDraft={(handIndex, x, y, targetPlayerId = 0) =>
+            socket?.send("use_draft", {
+                handIndex,
                 x,
                 y,
-                roomId,
-                playerId,
-                role,
-            });
-
-            socket?.send("build", { action, x, y });
-        }}
-        onPassBuild={() =>
-            socket?.send("build", { action: "pass", x: 0, y: 0 })}
+                targetPlayerId,
+            })}
+        onDiscardDraft={(handIndex) =>
+            socket?.send("discard_draft", { handIndex })}
+        onPassPlace={() => socket?.send("pass_place", {})}
+        onBuild={sendBuild}
+        onPassBuild={() => sendBuild("pass", 0, 0)}
         onLeaveRoom={leaveRoom}
         onCopyRoomCode={copyRoomCode}
     />

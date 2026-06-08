@@ -4,6 +4,7 @@
     export let wood = 0;
     export let stone = 0;
     export let grain = 0;
+    export let relic = 0;
     export let affordable = true;
 </script>
 
@@ -23,5 +24,9 @@
 
     {#if grain > 0}
         <ResourceIcon resource="grain" amount={grain} />
+    {/if}
+
+    {#if relic > 0}
+        <ResourceIcon resource="relic" amount={relic} />
     {/if}
 </div>

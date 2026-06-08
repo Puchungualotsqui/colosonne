@@ -1,10 +1,13 @@
 <script lang="ts">
     import {
+        Action,
         Biome,
         DraftKind,
         GamePhase,
         Structure,
+        type DraftItem,
         type GameState,
+        type TargetBuildAction,
         type Tile,
     } from "../lib/types";
     import { debugLog } from "../lib/debug";
@@ -12,12 +15,20 @@
     export let game: GameState;
     export let playerId = 0;
     export let role: "player" | "spectator" | "" = "";
-    export let selectedBuildAction: "outpost" | "city" | null = null;
+    export let selectedBuildAction: TargetBuildAction | null = null;
 
-    export let onPlaceTile: (x: number, y: number) => void;
-    export let onUseDraft: (x: number, y: number) => void;
+    export let selectedHandIndex = -1;
+    export let selectedHandItem: DraftItem | null = null;
+
+    export let onPlaceTile: (handIndex: number, x: number, y: number) => void;
+    export let onUseDraft: (
+        handIndex: number,
+        x: number,
+        y: number,
+        targetPlayerId?: number,
+    ) => void;
     export let onBuild: (
-        action: "outpost" | "city",
+        action: TargetBuildAction,
         x: number,
         y: number,
     ) => void;
@@ -33,6 +44,7 @@
         top: number;
         tile?: Tile;
         candidate: boolean;
+        ghost: boolean;
     };
 
     const HEX_W = 112;
@@ -41,56 +53,30 @@
     const STEP_Y = 74;
     const PAD = 90;
 
-    $: me = game.Players.find((p) => p.Id === playerId);
-    $: hand = me?.Hand ?? null;
-
     $: isMyTurn = role === "player" && game.CurrentPlayer === playerId;
+
     $: canPlaceTile =
         isMyTurn &&
         game.CurrentPhase === GamePhase.Place &&
-        hand?.Kind === DraftKind.Tile;
+        selectedHandIndex >= 0 &&
+        selectedHandItem?.Kind === DraftKind.Tile;
 
     $: canUseDraft =
         isMyTurn &&
         game.CurrentPhase === GamePhase.Place &&
-        hand !== null &&
-        hand.Kind !== DraftKind.Tile;
+        selectedHandIndex >= 0 &&
+        selectedHandItem !== null &&
+        selectedHandItem.Kind !== DraftKind.Tile &&
+        draftNeedsBoardTarget(selectedHandItem);
 
     $: canBuild =
         isMyTurn &&
         game.CurrentPhase === GamePhase.Build &&
         selectedBuildAction !== null;
 
-    $: candidates = canPlaceTile ? placementCandidates(game.Map) : [];
-    $: renderHexes = buildRenderHexes(game.Map, candidates);
+    $: placementShell = placementCandidates(game.Map);
+    $: renderHexes = buildRenderHexes(game.Map, placementShell, canPlaceTile);
     $: boardSize = calculateBoardSize(renderHexes);
-
-    let lastBuildDebugKey = "";
-
-    $: {
-        const buildDebugKey = JSON.stringify({
-            canBuild,
-            selectedBuildAction,
-            phase: game.CurrentPhase,
-            currentPlayer: game.CurrentPlayer,
-            playerId,
-            resources: me?.Resources,
-            targets: game.Map.filter((tile) => isValidBuildTarget(tile)).map(
-                (tile) => ({
-                    x: tile.X,
-                    y: tile.Y,
-                    biome: tile.Biome,
-                    owner: tile.Owner,
-                    hasOwner: tile.HasOwner,
-                    structure: tile.Structure,
-                }),
-            ),
-        });
-
-        if (canBuild && buildDebugKey !== lastBuildDebugKey) {
-            lastBuildDebugKey = buildDebugKey;
-        }
-    }
 
     function key(x: number, y: number) {
         return `${x},${y}`;
@@ -114,22 +100,6 @@
         };
     }
 
-    function handleHexPointerDown(hex: RenderHex) {
-        debugLog("board.hex.pointerdown", {
-            x: hex.x,
-            y: hex.y,
-            isClickable: isClickable(hex),
-            canBuild,
-            selectedBuildAction,
-            isValidBuildTarget: hex.tile ? isValidBuildTarget(hex.tile) : false,
-            tile: hex.tile,
-        });
-
-        if (!isClickable(hex)) return;
-
-        handleHexClick(hex);
-    }
-
     function placementCandidates(map: Tile[]): Coord[] {
         const occupied = new Set(map.map((t) => key(t.X, t.Y)));
         const out = new Map<string, Coord>();
@@ -149,20 +119,24 @@
     function buildRenderHexes(
         map: Tile[],
         candidateCoords: Coord[],
+        showCandidates: boolean,
     ): RenderHex[] {
         const tileByKey = new Map(map.map((t) => [key(t.X, t.Y), t]));
+
         const all = [
             ...map.map((tile) => ({
                 x: tile.X,
                 y: tile.Y,
                 tile,
                 candidate: false,
+                ghost: false,
             })),
             ...candidateCoords.map((c) => ({
                 x: c.x,
                 y: c.y,
                 tile: undefined,
-                candidate: true,
+                candidate: showCandidates,
+                ghost: !showCandidates,
             })),
         ];
 
@@ -218,6 +192,8 @@
                 return "border-[#9b7034] bg-[#d9b56a] text-[#142833]";
             case Biome.River:
                 return "border-[#327b8d] bg-[#6eb8c5] text-[#102b38]";
+            case Biome.Ruins:
+                return "border-[#6d4c9b] bg-[#9b79c9] text-[#142833]";
             default:
                 return "border-[#6b4a2f] bg-[#ead7aa] text-[#142833]";
         }
@@ -233,6 +209,8 @@
                 return "Plain";
             case Biome.River:
                 return "River";
+            case Biome.Ruins:
+                return "Ruins";
             default:
                 return "";
         }
@@ -244,12 +222,12 @@
                 return "Outpost";
             case Structure.City:
                 return "City";
+            case Structure.Settlement:
+                return "Settlement";
             case Structure.Bridge:
                 return "Bridge";
             case Structure.Watchtower:
                 return "Watchtower";
-            case Structure.Road:
-                return "Road";
             default:
                 return "";
         }
@@ -261,12 +239,12 @@
                 return "⌂";
             case Structure.City:
                 return "▦";
+            case Structure.Settlement:
+                return "◈";
             case Structure.Bridge:
                 return "⌒";
             case Structure.Watchtower:
                 return "♜";
-            case Structure.Road:
-                return "━";
             default:
                 return "";
         }
@@ -291,111 +269,158 @@
         return `P${tile.Owner}`;
     }
 
-    function playerResource(resourceId: number) {
-        return me?.Resources?.[resourceId] ?? 0;
+    function controlsTile(
+        tile: { HasOwner: boolean; Owner: number } | undefined,
+    ) {
+        return !!tile && tile.HasOwner && tile.Owner === playerId;
     }
 
-    function canPayOutpost() {
-        // Outpost cost: 2 Wood, 1 Stone
-        return playerResource(1) >= 2 && playerResource(2) >= 1;
+    function hasAdjacentControlledTile(x: number, y: number) {
+        return hexNeighbors(x, y).some((n) => {
+            const tile = game.Map.find((t) => t.X === n.x && t.Y === n.y);
+            return controlsTile(tile);
+        });
     }
 
-    function canPayCity() {
-        // City cost: 3 Stone, 2 Grain
-        return playerResource(2) >= 3 && playerResource(3) >= 2;
-    }
+    function draftNeedsBoardTarget(item: DraftItem) {
+        if (item.Kind === DraftKind.Structure) return true;
 
-    function isValidOutpostTarget(tile: Tile | undefined) {
-        if (!tile) return false;
-
-        if (!canPayOutpost()) return false;
-
-        if (tile.Biome === Biome.River) return false;
-
-        if (tile.Structure !== Structure.None) return false;
-
-        if (tile.HasOwner && tile.Owner !== playerId) return false;
-
-        return true;
-    }
-
-    function isValidCityTarget(tile: Tile | undefined) {
-        if (!tile) return false;
-
-        if (!canPayCity()) return false;
-
-        if (tile.Biome !== Biome.Plain) return false;
-
-        if (tile.Structure !== Structure.Outpost) return false;
-
-        if (tile.StructureOwner !== playerId) return false;
-
-        return true;
-    }
-
-    function isValidBuildTarget(tile: Tile | undefined) {
-        if (!canBuild || !selectedBuildAction) return false;
-
-        if (selectedBuildAction === "outpost") {
-            return isValidOutpostTarget(tile);
-        }
-
-        if (selectedBuildAction === "city") {
-            return isValidCityTarget(tile);
+        if (item.Kind === DraftKind.Action) {
+            return (
+                item.Action === Action.Harvest ||
+                item.Action === Action.Reinforce
+            );
         }
 
         return false;
     }
 
-    function tileTooltip(tile: Tile | undefined, candidate: boolean) {
-        if (candidate) {
-            return "Empty frontier hex";
+    function isValidDraftTarget(
+        item: DraftItem | null,
+        tile: Tile | undefined,
+    ) {
+        if (!item || !tile) return false;
+
+        if (item.Kind === DraftKind.Structure) {
+            if (tile.Structure !== Structure.None) return false;
+
+            switch (item.Structure) {
+                case Structure.Bridge:
+                    return (
+                        tile.Biome === Biome.River &&
+                        hasAdjacentControlledTile(tile.X, tile.Y)
+                    );
+
+                case Structure.Watchtower:
+                    return tile.Biome !== Biome.River && controlsTile(tile);
+
+                case Structure.Outpost:
+                case Structure.City:
+                case Structure.Settlement:
+                    return false;
+
+                default:
+                    return false;
+            }
         }
 
-        if (!tile) {
-            return "";
-        }
-
-        if (canBuild && selectedBuildAction === "outpost") {
-            if (isValidOutpostTarget(tile)) {
-                return "Build Outpost";
+        if (item.Kind === DraftKind.Action) {
+            if (item.Action === Action.Harvest) {
+                return controlsTile(tile) && tile.Biome !== Biome.River;
             }
 
-            if (!canPayOutpost()) {
-                return "Need 2 Wood and 1 Stone";
+            if (item.Action === Action.Reinforce) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    function isValidBuildTarget(tile: Tile | undefined) {
+        if (!canBuild || !selectedBuildAction || !tile) return false;
+
+        switch (selectedBuildAction) {
+            case "outpost":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None
+                );
+
+            case "settlement":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None
+                );
+
+            case "city":
+                return (
+                    tile.Structure === Structure.Outpost &&
+                    tile.StructureOwner === playerId
+                );
+
+            case "blockade":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None &&
+                    !tile.HasBlockade
+                );
+
+            case "flood":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None
+                );
+
+            default:
+                return false;
+        }
+    }
+
+    function tileTooltip(tile: Tile | undefined, candidate: boolean) {
+        if (candidate) return "Place tile";
+        if (!tile) return "";
+
+        if (canUseDraft && selectedHandItem) {
+            if (isValidDraftTarget(selectedHandItem, tile)) {
+                return "Use card here";
+            }
+        }
+
+        if (canBuild && selectedBuildAction) {
+            if (isValidBuildTarget(tile)) {
+                switch (selectedBuildAction) {
+                    case "outpost":
+                        return "Build Outpost";
+                    case "settlement":
+                        return "Build Settlement";
+                    case "city":
+                        return "Upgrade to City";
+                    case "blockade":
+                        return "Build Blockade";
+                    case "flood":
+                        return "Convert to River";
+                }
+            }
+
+            if (selectedBuildAction === "city") {
+                return "Requires your outpost";
+            }
+
+            if (selectedBuildAction === "flood") {
+                if (tile.Biome === Biome.River) return "Already river";
+                if (tile.Structure !== Structure.None)
+                    return "Cannot flood a structure";
             }
 
             if (tile.Biome === Biome.River) {
-                return "Cannot build outpost on river";
+                return tile.Structure === Structure.Bridge
+                    ? "Bridged river"
+                    : "River blocks normal control";
             }
 
             if (tile.Structure !== Structure.None) {
                 return "Tile already has a structure";
-            }
-
-            if (tile.HasOwner && tile.Owner !== playerId) {
-                return "Enemy controlled tile";
-            }
-        }
-
-        if (canBuild && selectedBuildAction === "city") {
-            if (isValidCityTarget(tile)) {
-                return "Upgrade to City";
-            }
-
-            if (!canPayCity()) {
-                return "Need 3 Stone and 2 Grain";
-            }
-
-            if (tile.Biome !== Biome.Plain) {
-                return "City requires plain";
-            }
-
-            if (
-                tile.Structure !== Structure.Outpost ||
-                tile.StructureOwner !== playerId
-            ) {
-                return "Requires your outpost";
             }
         }
 
@@ -405,7 +430,31 @@
                 ? structureLabel(tile.Structure)
                 : "No structure";
 
+        if (tile.Biome === Biome.River && tile.Structure !== Structure.Bridge) {
+            return `River · Not controllable · ${structure}`;
+        }
+
+        if (tile.Biome === Biome.Ruins) {
+            return `Ruins · ${owner} · ${structure} · Relic`;
+        }
+
         return `${biomeLabel(tile.Biome)} · ${owner} · ${structure}`;
+    }
+
+    function handleHexPointerDown(hex: RenderHex) {
+        debugLog("board.hex.pointerdown", {
+            x: hex.x,
+            y: hex.y,
+            isClickable: isClickable(hex),
+            canBuild,
+            selectedBuildAction,
+            selectedHandIndex,
+            selectedHandItem,
+            tile: hex.tile,
+        });
+
+        if (!isClickable(hex)) return;
+        handleHexClick(hex);
     }
 
     function handleHexClick(hex: RenderHex) {
@@ -420,72 +469,57 @@
             currentPhase: game.CurrentPhase,
             isMyTurn,
             selectedBuildAction,
+            selectedHandIndex,
+            selectedHandItem,
             canBuild,
             canPlaceTile,
             canUseDraft,
             isClickable: isClickable(hex),
             isValidBuildTarget: hex.tile ? isValidBuildTarget(hex.tile) : false,
-            resources: me?.Resources,
+            isValidDraftTarget: hex.tile
+                ? isValidDraftTarget(selectedHandItem, hex.tile)
+                : false,
             tile: hex.tile,
         });
 
         if (hex.candidate && canPlaceTile) {
-            debugLog("board.place_tile.send", {
-                x: hex.x,
-                y: hex.y,
-            });
-
-            onPlaceTile(hex.x, hex.y);
+            onPlaceTile(selectedHandIndex, hex.x, hex.y);
             return;
         }
 
         if (!hex.tile) return;
 
-        if (canUseDraft) {
-            debugLog("board.use_draft.send", {
-                x: hex.tile.X,
-                y: hex.tile.Y,
-            });
-
-            onUseDraft(hex.tile.X, hex.tile.Y);
+        if (canUseDraft && isValidDraftTarget(selectedHandItem, hex.tile)) {
+            onUseDraft(selectedHandIndex, hex.tile.X, hex.tile.Y);
             return;
         }
 
-        if (canBuild && selectedBuildAction) {
-            if (!isValidBuildTarget(hex.tile)) {
-                debugLog("board.build.invalid_target", {
-                    action: selectedBuildAction,
-                    x: hex.tile.X,
-                    y: hex.tile.Y,
-                    tile: hex.tile,
-                    wood: playerResource(1),
-                    stone: playerResource(2),
-                    grain: playerResource(3),
-                });
-
-                return;
-            }
-
-            debugLog("board.build.send", {
-                action: selectedBuildAction,
-                x: hex.tile.X,
-                y: hex.tile.Y,
-            });
-
+        if (canBuild && selectedBuildAction && isValidBuildTarget(hex.tile)) {
             onBuild(selectedBuildAction, hex.tile.X, hex.tile.Y);
         }
     }
 
     function isClickable(hex: RenderHex) {
         if (hex.candidate && canPlaceTile) return true;
-        if (hex.tile && canUseDraft) return true;
-        if (hex.tile && canBuild && isValidBuildTarget(hex.tile)) return true;
+
+        if (
+            hex.tile &&
+            canUseDraft &&
+            isValidDraftTarget(selectedHandItem, hex.tile)
+        ) {
+            return true;
+        }
+
+        if (hex.tile && canBuild && isValidBuildTarget(hex.tile)) {
+            return true;
+        }
+
         return false;
     }
 </script>
 
 <section
-    class="rounded-[34px] bg-[#caa66d] p-4 shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
+    class="min-w-0 overflow-hidden rounded-[34px] bg-[#caa66d] p-4 shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
 >
     <div
         class="rounded-[26px] border border-[#6b4a2f]/35 bg-[#ead7aa] p-4 shadow-inner"
@@ -500,7 +534,9 @@
             </div>
         </div>
 
-        <div class="overflow-auto rounded-2xl bg-[#d9c291] p-4 shadow-inner">
+        <div
+            class="max-h-[calc(100vh-220px)] max-w-full overflow-auto rounded-2xl bg-[#d9c291] p-4 shadow-inner"
+        >
             <div
                 class="relative"
                 style={`width: ${boardSize.width}px; height: ${boardSize.height}px;`}
@@ -511,21 +547,19 @@
                             "group clip-hex absolute flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
                             biomeClass(hex.tile, hex.candidate),
                             isClickable(hex)
-                                ? "cursor-pointer hover:-translate-y-1 hover:brightness-110"
+                                ? "cursor-pointer ring-4 ring-[#f2c36b] ring-offset-2 ring-offset-[#d9c291] hover:-translate-y-1 hover:brightness-110"
                                 : "cursor-default",
-                            hex.candidate ? "border-dashed opacity-80" : "",
-                            hex.tile && isValidBuildTarget(hex.tile)
-                                ? "build-target"
-                                : "",
-                            canBuild &&
+                            hex.candidate ? "border-dashed opacity-85" : "",
+                            hex.ghost ? "pointer-events-none opacity-0" : "",
+                            (canBuild || canUseDraft) &&
                             hex.tile &&
-                            !isValidBuildTarget(hex.tile)
+                            !isClickable(hex)
                                 ? "opacity-55"
                                 : "",
                         ].join(" ")}
                         style={`left: ${hex.left}px; top: ${hex.top}px; width: ${HEX_W}px; height: ${HEX_H}px;`}
                         type="button"
-                        aria-disabled={!isClickable(hex)}
+                        disabled={!isClickable(hex)}
                         aria-label={tileTooltip(hex.tile, hex.candidate)}
                         on:pointerdown|preventDefault={() =>
                             handleHexPointerDown(hex)}
@@ -547,6 +581,22 @@
                                     title={structureLabel(hex.tile.Structure)}
                                 >
                                     {structureIcon(hex.tile.Structure)}
+                                </div>
+                            {/if}
+
+                            {#if hex.tile.HasBlockade}
+                                <div
+                                    class={[
+                                        "absolute right-3 top-3 z-20 grid h-6 w-6 place-items-center rounded-full text-xs font-black shadow-sm",
+                                        hex.tile.BlockadeOwner === 1
+                                            ? "bg-[#1d4e89] text-white"
+                                            : hex.tile.BlockadeOwner === 2
+                                              ? "bg-[#b94b3f] text-white"
+                                              : "bg-[#142833] text-white",
+                                    ].join(" ")}
+                                    title={`Blockade P${hex.tile.BlockadeOwner}`}
+                                >
+                                    ✕
                                 </div>
                             {/if}
 
@@ -584,9 +634,5 @@
             6.7% 75%,
             6.7% 25%
         );
-    }
-    .build-target {
-        filter: drop-shadow(0 0 0.35rem #f2c36b)
-            drop-shadow(0 0 0.55rem #f2c36b);
     }
 </style>

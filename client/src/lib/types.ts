@@ -6,9 +6,16 @@ export enum GamePhase {
 
 export enum DraftKind {
   Tile = 0,
-  Upgrade = 1,
-  Structure = 2,
-  Action = 3,
+  Structure = 1,
+  Action = 2,
+}
+
+export enum Resource {
+  None = 0,
+  Wood = 1,
+  Stone = 2,
+  Grain = 3,
+  Relic = 4,
 }
 
 export enum Biome {
@@ -17,15 +24,16 @@ export enum Biome {
   Mountain = 2,
   Plain = 3,
   River = 4,
+  Ruins = 5,
 }
 
 export enum Structure {
   None = 0,
   Outpost = 1,
   City = 2,
-  Bridge = 3,
-  Watchtower = 4,
-  Road = 5,
+  Settlement = 3,
+  Bridge = 4,
+  Watchtower = 5,
 }
 
 export enum Action {
@@ -33,7 +41,24 @@ export enum Action {
   Harvest = 1,
   Reinforce = 2,
   Expansion = 3,
+  Raid = 4,
 }
+
+export type BuildAction =
+  | "outpost"
+  | "settlement"
+  | "city"
+  | "blockade"
+  | "floodworks"
+  | "flood"
+  | "pass";
+
+export type TargetBuildAction =
+  | "outpost"
+  | "settlement"
+  | "city"
+  | "blockade"
+  | "flood";
 
 export type DraftItem = {
   Kind: DraftKind;
@@ -42,30 +67,46 @@ export type DraftItem = {
   Action: Action;
 };
 
+export type MarketSlot = DraftItem | null;
+
 export type Player = {
   Id: number;
-  Hand: DraftItem | null;
+  Hand: DraftItem[] | null;
   Resources: Record<number, number>;
+
+  FloodTokens?: number;
+
+  FloodworksBought?: number;
 };
 
 export type Tile = {
   X: number;
   Y: number;
+
   Biome: Biome;
+
   Influence: Record<number, number>;
   TempInfluence: Record<number, number>;
+
   Owner: number;
   HasOwner: boolean;
+
   Structure: Structure;
   StructureOwner: number;
-  UpgradeLevel: number;
+
+  HasBlockade: boolean;
+  BlockadeOwner: number;
 };
 
 export type GameState = {
   Players: Player[];
   Map: Tile[];
   Deck: DraftItem[];
-  Market: DraftItem[];
+
+  // Use null to represent a picked/empty market slot.
+  // This allows the UI to show the empty card slot before refill.
+  Market: MarketSlot[];
+
   CurrentPlayer: number;
   CurrentPhase: GamePhase;
   RoundFirstIndex: number;

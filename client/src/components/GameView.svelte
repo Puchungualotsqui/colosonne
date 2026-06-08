@@ -3,18 +3,20 @@
     import CostBadge from "./CostBadge.svelte";
     import Board from "./Board.svelte";
     import Market from "./Market.svelte";
+    import HandCard from "./HandCard.svelte";
     import {
         Action,
         Biome,
         DraftKind,
         GamePhase,
         Structure,
+        type BuildAction,
         type DraftItem,
         type GameState,
         type Player,
+        type TargetBuildAction,
     } from "../lib/types";
     import { debugLog } from "../lib/debug";
-    import HandCard from "./HandCard.svelte";
 
     export let game: GameState;
     export let roomId = "";
@@ -23,24 +25,43 @@
     export let error = "";
 
     export let onPick: (marketIndex: number) => void;
-    export let onPlaceTile: (x: number, y: number) => void;
-    export let onUseDraft: (x: number, y: number) => void;
-    export let onPassPlace: () => void;
-    export let onBuild: (
-        action: "outpost" | "city",
+    export let onPlaceTile: (handIndex: number, x: number, y: number) => void;
+    export let onUseDraft: (
+        handIndex: number,
         x: number,
         y: number,
+        targetPlayerId?: number,
     ) => void;
+    export let onDiscardDraft: (handIndex: number) => void;
+    export let onPassPlace: () => void;
+    export let onBuild: (action: BuildAction, x: number, y: number) => void;
     export let onPassBuild: () => void;
     export let onLeaveRoom: () => void;
     export let onCopyRoomCode: () => void;
 
-    let selectedBuildAction: "outpost" | "city" | null = null;
+    type Cost = {
+        wood?: number;
+        stone?: number;
+        grain?: number;
+        relic?: number;
+    };
+
+    const RES_WOOD = 1;
+    const RES_STONE = 2;
+    const RES_GRAIN = 3;
+    const RES_RELIC = 4;
+
+    let selectedBuildAction: TargetBuildAction | null = null;
+    let selectedHandIndex = -1;
 
     let previousResourcesByPlayer = new Map<number, string>();
     let gainedResourcesByPlayer = new Map<number, Map<number, number>>();
 
     $: me = game.Players.find((p) => p.Id === playerId);
+    $: myHand = me?.Hand ?? [];
+    $: selectedHandItem =
+        selectedHandIndex >= 0 ? (myHand[selectedHandIndex] ?? null) : null;
+
     $: isMyTurn = role === "player" && game.CurrentPlayer === playerId;
     $: currentPhaseName = phaseName(game.CurrentPhase);
     $: currentPlayerName =
@@ -52,49 +73,98 @@
         selectedBuildAction = null;
     }
 
-    $: handIsUsable = canUseHandLocally(me?.Hand);
-    $: canPassPlace =
-        isMyTurn && game.CurrentPhase === GamePhase.Place && !handIsUsable;
+    $: {
+        if (
+            !isMyTurn ||
+            game.CurrentPhase !== GamePhase.Place ||
+            myHand.length === 0
+        ) {
+            selectedHandIndex = -1;
+        } else if (
+            selectedHandIndex < 0 ||
+            selectedHandIndex >= myHand.length
+        ) {
+            selectedHandIndex = firstUsableHandIndex();
+        }
+    }
+
+    $: selectedHandIsUsable = canUseHandLocally(selectedHandItem);
+    $: canDiscardSelected =
+        isMyTurn &&
+        game.CurrentPhase === GamePhase.Place &&
+        selectedHandIndex >= 0 &&
+        selectedHandItem !== null &&
+        !selectedHandIsUsable;
 
     $: trackResourceGains(game);
 
-    $: canAffordOutpost = canPay(me, { wood: 2, stone: 1 });
-    $: canAffordCity = canPay(me, { stone: 3, grain: 2 });
+    let outpostCost: Cost = {};
+    let cityCost: Cost = {};
+    let settlementCost: Cost = {};
+    let blockadeCost: Cost = {};
+    let floodworksCost: Cost = {};
 
-    $: hasOutpostBuildTarget = game.Map.some((tile) =>
-        isOutpostBuildTarget(tile),
+    $: outpostCost = {
+        wood: 2 + builtCount(Structure.Outpost),
+        stone: 1,
+    };
+
+    $: cityCost = {
+        stone: 2,
+        grain: 3 + builtCount(Structure.City),
+    };
+
+    $: settlementCost = {
+        wood: 2,
+        stone: 2,
+        grain: 2 + builtCount(Structure.Settlement),
+    };
+
+    $: blockadeCost = { wood: 1, grain: 1 };
+
+    $: floodworksCost = {
+        relic: 3 + (me?.FloodworksBought ?? 0) * 2,
+    };
+
+    $: canAffordOutpost = canPay(me, outpostCost);
+    $: canAffordCity = canPay(me, cityCost);
+    $: canAffordSettlement = canPay(me, settlementCost);
+    $: canAffordBlockade = canPay(me, blockadeCost);
+    $: canAffordFloodworks = canPay(me, floodworksCost);
+
+    $: hasOutpostTarget = game.Map.some((tile) =>
+        isBuildTarget("outpost", tile),
     );
-
-    $: hasCityUpgradeTarget = game.Map.some((tile) =>
-        isCityUpgradeTarget(tile),
+    $: hasCityTarget = game.Map.some((tile) => isBuildTarget("city", tile));
+    $: hasSettlementTarget = game.Map.some((tile) =>
+        isBuildTarget("settlement", tile),
     );
+    $: hasBlockadeTarget = game.Map.some((tile) =>
+        isBuildTarget("blockade", tile),
+    );
+    $: hasFloodTarget = game.Map.some((tile) => isBuildTarget("flood", tile));
 
-    $: canSelectOutpost = canAffordOutpost && hasOutpostBuildTarget;
-    $: canSelectCity = canAffordCity && hasCityUpgradeTarget;
+    $: canSelectOutpost = canAffordOutpost && hasOutpostTarget;
+    $: canSelectCity = canAffordCity && hasCityTarget;
+    $: canSelectSettlement = canAffordSettlement && hasSettlementTarget;
+    $: canSelectBlockade = canAffordBlockade && hasBlockadeTarget;
+    $: canBuyFloodworks = canAffordFloodworks;
+    $: canUseFloodToken = (me?.FloodTokens ?? 0) > 0 && hasFloodTarget;
 
-    $: outpostTitle = !canAffordOutpost
-        ? "Need 2 Wood and 1 Stone"
-        : !hasOutpostBuildTarget
-          ? "No valid land tile"
-          : "Build Outpost";
+    $: myWoodGain = resourceGainAmount(playerId, RES_WOOD);
+    $: myStoneGain = resourceGainAmount(playerId, RES_STONE);
+    $: myGrainGain = resourceGainAmount(playerId, RES_GRAIN);
+    $: myRelicGain = resourceGainAmount(playerId, RES_RELIC);
 
-    $: cityTitle = !canAffordCity
-        ? "Need 3 Stone and 2 Grain"
-        : !hasCityUpgradeTarget
-          ? "Requires your plain outpost"
-          : "Upgrade City";
-
-    $: myWoodGain = resourceGainAmount(playerId, 1);
-    $: myStoneGain = resourceGainAmount(playerId, 2);
-    $: myGrainGain = resourceGainAmount(playerId, 3);
-    $: hasMyResourceGain = myWoodGain > 0 || myStoneGain > 0 || myGrainGain > 0;
+    $: hasMyResourceGain =
+        myWoodGain > 0 || myStoneGain > 0 || myGrainGain > 0 || myRelicGain > 0;
 
     function phaseName(phase: GamePhase) {
         switch (phase) {
             case GamePhase.Pick:
                 return "Draft";
             case GamePhase.Place:
-                return "Place";
+                return "Use";
             case GamePhase.Build:
                 return "Build";
             default:
@@ -108,9 +178,10 @@
 
     function resourceKey(player: Player) {
         return JSON.stringify({
-            wood: resourceAmount(player, 1),
-            stone: resourceAmount(player, 2),
-            grain: resourceAmount(player, 3),
+            wood: resourceAmount(player, RES_WOOD),
+            stone: resourceAmount(player, RES_STONE),
+            grain: resourceAmount(player, RES_GRAIN),
+            relic: resourceAmount(player, RES_RELIC),
         });
     }
 
@@ -126,13 +197,19 @@
                 const oldValue = JSON.parse(oldRaw);
                 const gained = new Map<number, number>();
 
-                const woodDelta = resourceAmount(player, 1) - oldValue.wood;
-                const stoneDelta = resourceAmount(player, 2) - oldValue.stone;
-                const grainDelta = resourceAmount(player, 3) - oldValue.grain;
+                const woodDelta =
+                    resourceAmount(player, RES_WOOD) - oldValue.wood;
+                const stoneDelta =
+                    resourceAmount(player, RES_STONE) - oldValue.stone;
+                const grainDelta =
+                    resourceAmount(player, RES_GRAIN) - oldValue.grain;
+                const relicDelta =
+                    resourceAmount(player, RES_RELIC) - oldValue.relic;
 
-                if (woodDelta > 0) gained.set(1, woodDelta);
-                if (stoneDelta > 0) gained.set(2, stoneDelta);
-                if (grainDelta > 0) gained.set(3, grainDelta);
+                if (woodDelta > 0) gained.set(RES_WOOD, woodDelta);
+                if (stoneDelta > 0) gained.set(RES_STONE, stoneDelta);
+                if (grainDelta > 0) gained.set(RES_GRAIN, grainDelta);
+                if (relicDelta > 0) gained.set(RES_RELIC, relicDelta);
 
                 if (gained.size > 0) {
                     nextGained.set(player.Id, gained);
@@ -156,41 +233,54 @@
         );
     }
 
-    function canPay(
-        player: Player | undefined,
-        cost: { wood?: number; stone?: number; grain?: number },
-    ) {
+    function scaledCost(base: Cost, multiplier: number): Cost {
+        return {
+            wood: (base.wood ?? 0) * multiplier,
+            stone: (base.stone ?? 0) * multiplier,
+            grain: (base.grain ?? 0) * multiplier,
+            relic: (base.relic ?? 0) * multiplier,
+        };
+    }
+
+    function builtCount(structure: Structure) {
+        return game.Map.filter(
+            (tile) =>
+                tile.Structure === structure &&
+                tile.StructureOwner === playerId,
+        ).length;
+    }
+
+    function canPay(player: Player | undefined, cost: Cost) {
         if (!player) return false;
 
         return (
-            resourceAmount(player, 1) >= (cost.wood ?? 0) &&
-            resourceAmount(player, 2) >= (cost.stone ?? 0) &&
-            resourceAmount(player, 3) >= (cost.grain ?? 0)
+            resourceAmount(player, RES_WOOD) >= (cost.wood ?? 0) &&
+            resourceAmount(player, RES_STONE) >= (cost.stone ?? 0) &&
+            resourceAmount(player, RES_GRAIN) >= (cost.grain ?? 0) &&
+            resourceAmount(player, RES_RELIC) >= (cost.relic ?? 0)
         );
     }
 
-    function isOutpostBuildTarget(tile: {
-        Biome: Biome;
-        Structure: Structure;
-        HasOwner: boolean;
-        Owner: number;
-    }) {
-        if (tile.Biome === Biome.River) return false;
-        if (tile.Structure !== Structure.None) return false;
-        if (tile.HasOwner && tile.Owner !== playerId) return false;
-        return true;
+    function costTitle(cost: Cost, affordable: boolean, fallback: string) {
+        if (affordable) return fallback;
+
+        const parts = [];
+        if (cost.wood) parts.push(`${cost.wood} Wood`);
+        if (cost.stone) parts.push(`${cost.stone} Stone`);
+        if (cost.grain) parts.push(`${cost.grain} Grain`);
+        if (cost.relic) parts.push(`${cost.relic} Relic`);
+
+        return `Need ${parts.join(", ")}`;
     }
 
-    function isCityUpgradeTarget(tile: {
-        Biome: Biome;
-        Structure: Structure;
-        StructureOwner: number;
-    }) {
-        return (
-            tile.Biome === Biome.Plain &&
-            tile.Structure === Structure.Outpost &&
-            tile.StructureOwner === playerId
-        );
+    function handItems(player: Player | undefined) {
+        return player?.Hand ?? [];
+    }
+
+    function firstUsableHandIndex() {
+        const usableIndex = myHand.findIndex((item) => canUseHandLocally(item));
+        if (usableIndex >= 0) return usableIndex;
+        return myHand.length > 0 ? 0 : -1;
     }
 
     function biomeName(biome: Biome) {
@@ -203,6 +293,8 @@
                 return "Plain";
             case Biome.River:
                 return "River";
+            case Biome.Ruins:
+                return "Ruins";
             default:
                 return "Unknown";
         }
@@ -214,12 +306,12 @@
                 return "Bridge";
             case Structure.Watchtower:
                 return "Watchtower";
-            case Structure.Road:
-                return "Road";
             case Structure.Outpost:
                 return "Outpost";
             case Structure.City:
                 return "City";
+            case Structure.Settlement:
+                return "Settlement";
             default:
                 return "Structure";
         }
@@ -233,6 +325,8 @@
                 return "Reinforce";
             case Action.Expansion:
                 return "Expansion";
+            case Action.Raid:
+                return "Raid";
             default:
                 return "Action";
         }
@@ -244,8 +338,6 @@
         switch (item.Kind) {
             case DraftKind.Tile:
                 return `${biomeName(item.Biome)} Tile`;
-            case DraftKind.Upgrade:
-                return "Upgrade";
             case DraftKind.Structure:
                 return structureName(item.Structure);
             case DraftKind.Action:
@@ -259,22 +351,6 @@
         if (targetPlayerId === 1) return "bg-[#1d4e89]";
         if (targetPlayerId === 2) return "bg-[#b94b3f]";
         return "bg-[#6b4a2f]";
-    }
-
-    function handleBuild(action: "outpost" | "city", x: number, y: number) {
-        debugLog("gameview.build.received_from_board", {
-            action,
-            x,
-            y,
-            playerId,
-            currentPlayer: game.CurrentPlayer,
-            currentPhase: game.CurrentPhase,
-            selectedBuildAction,
-            resources: me?.Resources,
-        });
-
-        onBuild(action, x, y);
-        selectedBuildAction = null;
     }
 
     function hexNeighbors(x: number, y: number) {
@@ -311,14 +387,6 @@
                     hexNeighbors(tile.X, tile.Y).some((n) => !tileAt(n.x, n.y)),
                 );
 
-            case DraftKind.Upgrade:
-                return game.Map.some(
-                    (tile) =>
-                        tile.Biome !== Biome.River &&
-                        controlsTile(tile) &&
-                        tile.UpgradeLevel < 3,
-                );
-
             case DraftKind.Structure:
                 return game.Map.some((tile) =>
                     canUseStructureOnTileLocally(item.Structure, tile),
@@ -326,6 +394,9 @@
 
             case DraftKind.Action:
                 if (item.Action === Action.Expansion) return true;
+                if (item.Action === Action.Raid)
+                    return game.Players.some((p) => p.Id !== playerId);
+
                 if (item.Action === Action.Reinforce)
                     return game.Map.length > 0;
 
@@ -345,10 +416,7 @@
 
     function canUseStructureOnTileLocally(structure: Structure, tile: any) {
         if (!tile) return false;
-
-        if (tile.Structure !== Structure.None) {
-            return false;
-        }
+        if (tile.Structure !== Structure.None) return false;
 
         switch (structure) {
             case Structure.Bridge:
@@ -357,22 +425,87 @@
                     hasAdjacentControlledTile(tile.X, tile.Y)
                 );
 
-            case Structure.Road:
             case Structure.Watchtower:
                 return tile.Biome !== Biome.River && controlsTile(tile);
 
             case Structure.Outpost:
-                return (
-                    tile.Biome !== Biome.River &&
-                    (!tile.HasOwner || tile.Owner === playerId)
-                );
-
             case Structure.City:
+            case Structure.Settlement:
                 return false;
 
             default:
                 return false;
         }
+    }
+
+    function isBuildTarget(action: TargetBuildAction, tile: any) {
+        if (!tile) return false;
+
+        switch (action) {
+            case "outpost":
+            case "settlement":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None
+                );
+
+            case "blockade":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None &&
+                    !tile.HasBlockade
+                );
+
+            case "city":
+                return (
+                    tile.Structure === Structure.Outpost &&
+                    tile.StructureOwner === playerId
+                );
+
+            case "flood":
+                return (
+                    tile.Biome !== Biome.River &&
+                    tile.Structure === Structure.None
+                );
+
+            default:
+                return false;
+        }
+    }
+
+    function handleBuild(action: TargetBuildAction, x: number, y: number) {
+        debugLog("gameview.build.received_from_board", {
+            action,
+            x,
+            y,
+            playerId,
+            currentPlayer: game.CurrentPlayer,
+            currentPhase: game.CurrentPhase,
+            selectedBuildAction,
+            resources: me?.Resources,
+        });
+
+        onBuild(action, x, y);
+        selectedBuildAction = null;
+    }
+
+    function selectBuildAction(action: TargetBuildAction) {
+        selectedBuildAction = selectedBuildAction === action ? null : action;
+
+        debugLog("build.select", {
+            action,
+            selectedBuildAction,
+            playerId,
+            currentPlayer: game.CurrentPlayer,
+            currentPhase: game.CurrentPhase,
+            isMyTurn,
+        });
+    }
+
+    function useSelectedInstant(targetPlayerId = 0) {
+        if (selectedHandIndex < 0 || !selectedHandItem) return;
+
+        onUseDraft(selectedHandIndex, 0, 0, targetPlayerId);
     }
 </script>
 
@@ -431,9 +564,11 @@
     </header>
 
     <section
-        class="relative z-10 mx-auto grid max-w-7xl gap-6 px-6 pb-12 pt-4 lg:grid-cols-[280px_1fr_340px] lg:px-12"
+        class="relative z-10 mx-auto grid w-full max-w-[1540px] gap-5 px-4 pb-10 pt-3 lg:grid-cols-[250px_minmax(0,1fr)_330px] lg:px-6 xl:grid-cols-[270px_minmax(0,1fr)_350px]"
     >
-        <aside class="space-y-5">
+        <aside
+            class="min-w-0 space-y-5 lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto lg:pr-1"
+        >
             <section
                 class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
             >
@@ -532,8 +667,14 @@
                                 </div>
                             </div>
 
-                            <div class="mt-3">
-                                <HandCard item={player.Hand} size="sm" />
+                            <div class="mt-3 grid grid-cols-3 gap-2">
+                                {#each handItems(player) as card}
+                                    <HandCard item={card} size="sm" />
+                                {/each}
+
+                                {#if handItems(player).length === 0}
+                                    <HandCard item={null} size="sm" />
+                                {/if}
                             </div>
 
                             <div class="mt-3 flex flex-wrap gap-2">
@@ -554,6 +695,21 @@
                                     amount={resourceAmount(player, 3)}
                                     pulse={resourcePulse(player.Id, 3)}
                                 />
+
+                                <ResourceIcon
+                                    resource="relic"
+                                    amount={resourceAmount(player, 4)}
+                                    pulse={resourcePulse(player.Id, 4)}
+                                />
+
+                                {#if player.FloodTokens && player.FloodTokens > 0}
+                                    <div
+                                        class="inline-flex h-8 min-w-12 items-center justify-center gap-1.5 rounded-xl border-2 border-[#327b8d] bg-[#6eb8c5] px-2 text-xs font-black text-[#102b38] shadow-sm"
+                                        title="Flood tokens"
+                                    >
+                                        ≈ {player.FloodTokens}
+                                    </div>
+                                {/if}
                             </div>
                         </div>
                     {/each}
@@ -566,12 +722,16 @@
             {playerId}
             {role}
             {selectedBuildAction}
+            {selectedHandIndex}
+            {selectedHandItem}
             {onPlaceTile}
             {onUseDraft}
             onBuild={handleBuild}
         />
 
-        <aside class="space-y-5">
+        <aside
+            class="min-w-0 space-y-5 lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto lg:pr-1"
+        >
             {#if hasMyResourceGain}
                 <section
                     class="resource-toast rounded-3xl bg-[#73c4bd] p-4 text-[#102b38] shadow-md ring-1 ring-white/20"
@@ -609,20 +769,25 @@
                                 pulse
                             />
                         {/if}
+
+                        {#if myRelicGain > 0}
+                            <ResourceIcon
+                                resource="relic"
+                                amount={`+${myRelicGain}`}
+                                size="md"
+                                pulse
+                            />
+                        {/if}
                     </div>
                 </section>
             {/if}
 
-            {#if isMyTurn && game.CurrentPhase !== GamePhase.Pick}
+            {#if isMyTurn && game.CurrentPhase === GamePhase.Place}
                 <section
                     class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
                 >
                     <div class="flex items-center justify-between gap-3">
-                        <h2 class="text-xl font-black text-[#fff7e8]">
-                            {game.CurrentPhase === GamePhase.Place
-                                ? "Use"
-                                : "Build"}
-                        </h2>
+                        <h2 class="text-xl font-black text-[#fff7e8]">Hand</h2>
 
                         <div
                             class="rounded-xl bg-[#73c4bd] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#102b38]"
@@ -631,139 +796,312 @@
                         </div>
                     </div>
 
-                    {#if game.CurrentPhase === GamePhase.Place}
-                        {#if me?.Hand}
-                            <div class="mt-4">
-                                <HandCard item={me.Hand} size="lg" />
+                    {#if myHand.length > 0}
+                        <div class="mt-4 grid gap-3">
+                            {#each myHand as card, index}
+                                <button
+                                    class={[
+                                        "cursor-pointer rounded-2xl text-left transition hover:-translate-y-0.5",
+                                        selectedHandIndex === index
+                                            ? "ring-4 ring-[#f2c36b]"
+                                            : "ring-1 ring-transparent",
+                                    ].join(" ")}
+                                    type="button"
+                                    on:click={() => (selectedHandIndex = index)}
+                                >
+                                    <HandCard item={card} size="md" />
+                                </button>
+                            {/each}
+                        </div>
+
+                        {#if selectedHandItem?.Kind === DraftKind.Action && selectedHandItem.Action === Action.Expansion}
+                            <button
+                                class="mt-4 w-full cursor-pointer rounded-2xl bg-[#73c4bd] px-5 py-3 font-black text-[#102b38] shadow-[0_6px_0_rgba(0,0,0,0.18)] transition hover:bg-[#85d8d1] active:translate-y-1"
+                                type="button"
+                                on:click={() => useSelectedInstant()}
+                            >
+                                Use Expansion
+                            </button>
+                        {/if}
+
+                        {#if selectedHandItem?.Kind === DraftKind.Action && selectedHandItem.Action === Action.Raid}
+                            <div class="mt-4 grid gap-2">
+                                {#each game.Players.filter((p) => p.Id !== playerId) as target}
+                                    <button
+                                        class="cursor-pointer rounded-2xl bg-[#b94b3f] px-5 py-3 font-black text-white shadow-[0_6px_0_rgba(0,0,0,0.18)] transition hover:bg-[#c9574a] active:translate-y-1"
+                                        type="button"
+                                        on:click={() =>
+                                            useSelectedInstant(target.Id)}
+                                    >
+                                        Raid P{target.Id}
+                                    </button>
+                                {/each}
                             </div>
                         {/if}
 
-                        {#if canPassPlace}
+                        {#if canDiscardSelected}
                             <button
                                 class="mt-4 w-full cursor-pointer rounded-2xl bg-[#b94b3f] px-5 py-3 font-black text-white shadow-[0_6px_0_rgba(0,0,0,0.18)] transition hover:bg-[#c9574a] active:translate-y-1"
                                 type="button"
-                                on:click={onPassPlace}
+                                on:click={() =>
+                                    onDiscardDraft(selectedHandIndex)}
                             >
                                 Discard
                             </button>
                         {/if}
-                    {/if}
-
-                    {#if game.CurrentPhase === GamePhase.Build}
-                        {#if selectedBuildAction}
-                            <div
-                                class="mt-4 rounded-2xl bg-[#f2c36b]/20 p-3 text-center text-sm font-black text-[#f8efe0] ring-1 ring-[#f2c36b]/40"
-                            >
-                                {selectedBuildAction === "outpost"
-                                    ? "Click a land tile"
-                                    : "Click your plain outpost"}
-                            </div>
-                        {/if}
-
-                        <div class="mt-4 grid grid-cols-2 gap-3">
-                            <button
-                                class={[
-                                    "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0",
-                                    selectedBuildAction === "outpost"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
-                                    canSelectOutpost
-                                        ? "cursor-pointer"
-                                        : "cursor-not-allowed",
-                                ].join(" ")}
-                                type="button"
-                                title={outpostTitle}
-                                disabled={!canSelectOutpost}
-                                on:click={() => {
-                                    if (!canSelectOutpost) return;
-
-                                    selectedBuildAction = "outpost";
-                                    debugLog("build.select", {
-                                        action: "outpost",
-                                        playerId,
-                                        currentPlayer: game.CurrentPlayer,
-                                        currentPhase: game.CurrentPhase,
-                                        isMyTurn,
-                                    });
-                                }}
-                            >
-                                <div class="text-3xl">⌂</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Outpost
-                                </div>
-
-                                <div class="mt-3">
-                                    <CostBadge
-                                        wood={2}
-                                        stone={1}
-                                        affordable={canSelectOutpost}
-                                    />
-                                </div>
-                            </button>
-
-                            <button
-                                class={[
-                                    "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1 disabled:cursor-not-allowed disabled:opacity-45 disabled:active:translate-y-0",
-                                    selectedBuildAction === "city"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16",
-                                    canSelectCity
-                                        ? "cursor-pointer"
-                                        : "cursor-not-allowed",
-                                ].join(" ")}
-                                type="button"
-                                title={cityTitle}
-                                disabled={!canSelectCity}
-                                on:click={() => {
-                                    if (!canSelectCity) return;
-
-                                    selectedBuildAction = "city";
-                                    debugLog("build.select", {
-                                        action: "city",
-                                        playerId,
-                                        currentPlayer: game.CurrentPlayer,
-                                        currentPhase: game.CurrentPhase,
-                                        isMyTurn,
-                                    });
-                                }}
-                            >
-                                <div class="text-3xl">▦</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    City
-                                </div>
-
-                                <div class="mt-3">
-                                    <CostBadge
-                                        stone={3}
-                                        grain={2}
-                                        affordable={canSelectCity}
-                                    />
-                                </div>
-                            </button>
-                        </div>
-
+                    {:else}
                         <button
                             class="mt-4 w-full cursor-pointer rounded-2xl bg-[#f8efe0]/10 px-5 py-3 font-black text-[#fff7e8] shadow-[0_6px_0_rgba(0,0,0,0.18)] ring-1 ring-[#f8efe0]/20 transition hover:bg-[#f8efe0]/16 active:translate-y-1"
                             type="button"
-                            on:click={onPassBuild}
+                            on:click={onPassPlace}
                         >
-                            Pass
+                            Continue
                         </button>
                     {/if}
+                </section>
+            {/if}
 
-                    {#if error}
+            {#if isMyTurn && game.CurrentPhase === GamePhase.Build}
+                <section
+                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
+                >
+                    <div class="flex items-center justify-between gap-3">
+                        <h2 class="text-xl font-black text-[#fff7e8]">Build</h2>
+
                         <div
-                            class="mt-4 rounded-2xl bg-[#b94b3f] px-5 py-3 text-sm font-semibold text-white"
+                            class="rounded-xl bg-[#73c4bd] px-3 py-1 text-xs font-black uppercase tracking-wider text-[#102b38]"
                         >
-                            {error}
+                            Your turn
+                        </div>
+                    </div>
+
+                    {#if selectedBuildAction}
+                        <div
+                            class="mt-4 rounded-2xl bg-[#f2c36b]/20 p-3 text-center text-sm font-black text-[#f8efe0] ring-1 ring-[#f2c36b]/40"
+                        >
+                            {selectedBuildAction === "city"
+                                ? "Click your outpost"
+                                : selectedBuildAction === "flood"
+                                  ? "Click a tile without structure"
+                                  : "Click a valid land tile"}
                         </div>
                     {/if}
+
+                    <div class="mt-4 grid grid-cols-2 gap-3">
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                selectedBuildAction === "outpost"
+                                    ? "bg-[#f2c36b] text-[#142833]"
+                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                canSelectOutpost
+                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                    : "cursor-not-allowed opacity-45",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canSelectOutpost}
+                            title={costTitle(
+                                outpostCost,
+                                canAffordOutpost,
+                                hasOutpostTarget
+                                    ? "Build Outpost"
+                                    : "No valid target",
+                            )}
+                            on:click={() => selectBuildAction("outpost")}
+                        >
+                            <div class="text-3xl">⌂</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                Outpost
+                            </div>
+                            <div class="mt-2">
+                                <CostBadge
+                                    wood={outpostCost.wood ?? 0}
+                                    stone={outpostCost.stone ?? 0}
+                                    grain={outpostCost.grain ?? 0}
+                                    relic={outpostCost.relic ?? 0}
+                                    affordable={canAffordOutpost}
+                                />
+                            </div>
+                        </button>
+
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                selectedBuildAction === "settlement"
+                                    ? "bg-[#f2c36b] text-[#142833]"
+                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                canSelectSettlement
+                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                    : "cursor-not-allowed opacity-45",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canSelectSettlement}
+                            title={costTitle(
+                                settlementCost,
+                                canAffordSettlement,
+                                hasSettlementTarget
+                                    ? "Build Settlement"
+                                    : "No valid target",
+                            )}
+                            on:click={() => selectBuildAction("settlement")}
+                        >
+                            <div class="text-3xl">◈</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                Settlement
+                            </div>
+                            <div class="mt-2">
+                                <CostBadge
+                                    wood={settlementCost.wood ?? 0}
+                                    stone={settlementCost.stone ?? 0}
+                                    grain={settlementCost.grain ?? 0}
+                                    relic={settlementCost.relic ?? 0}
+                                    affordable={canAffordSettlement}
+                                />
+                            </div>
+                        </button>
+
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                selectedBuildAction === "city"
+                                    ? "bg-[#f2c36b] text-[#142833]"
+                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                canSelectCity
+                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                    : "cursor-not-allowed opacity-45",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canSelectCity}
+                            title={costTitle(
+                                cityCost,
+                                canAffordCity,
+                                hasCityTarget
+                                    ? "Upgrade City"
+                                    : "Requires your outpost",
+                            )}
+                            on:click={() => selectBuildAction("city")}
+                        >
+                            <div class="text-3xl">▦</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                City
+                            </div>
+                            <div class="mt-2">
+                                <CostBadge
+                                    wood={cityCost.wood ?? 0}
+                                    stone={cityCost.stone ?? 0}
+                                    grain={cityCost.grain ?? 0}
+                                    relic={cityCost.relic ?? 0}
+                                    affordable={canAffordCity}
+                                />
+                            </div>
+                        </button>
+
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                selectedBuildAction === "blockade"
+                                    ? "bg-[#f2c36b] text-[#142833]"
+                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                canSelectBlockade
+                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                    : "cursor-not-allowed opacity-45",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canSelectBlockade}
+                            title={costTitle(
+                                blockadeCost,
+                                canAffordBlockade,
+                                hasBlockadeTarget
+                                    ? "Build Blockade"
+                                    : "No valid target",
+                            )}
+                            on:click={() => selectBuildAction("blockade")}
+                        >
+                            <div class="text-3xl">✕</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                Blockade
+                            </div>
+                            <div class="mt-2">
+                                <CostBadge
+                                    wood={blockadeCost.wood ?? 0}
+                                    stone={blockadeCost.stone ?? 0}
+                                    grain={blockadeCost.grain ?? 0}
+                                    affordable={canAffordBlockade}
+                                />
+                            </div>
+                        </button>
+                    </div>
+
+                    <div class="mt-3 grid grid-cols-2 gap-3">
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                canBuyFloodworks
+                                    ? "cursor-pointer bg-[#6eb8c5] text-[#102b38] hover:bg-[#85d8d1]"
+                                    : "cursor-not-allowed bg-[#f8efe0]/10 text-[#fff7e8] opacity-45 ring-1 ring-[#f8efe0]/20",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canBuyFloodworks}
+                            title={costTitle(
+                                floodworksCost,
+                                canAffordFloodworks,
+                                "Buy 3 flood tokens",
+                            )}
+                            on:click={() => onBuild("floodworks", 0, 0)}
+                        >
+                            <div class="text-3xl">≈</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                Floodworks
+                            </div>
+                            <div class="mt-2">
+                                <CostBadge
+                                    wood={floodworksCost.wood ?? 0}
+                                    stone={floodworksCost.stone ?? 0}
+                                    grain={floodworksCost.grain ?? 0}
+                                    relic={floodworksCost.relic ?? 0}
+                                    affordable={canAffordFloodworks}
+                                />
+                            </div>
+                        </button>
+
+                        <button
+                            class={[
+                                "rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
+                                selectedBuildAction === "flood"
+                                    ? "bg-[#f2c36b] text-[#142833]"
+                                    : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
+                                canUseFloodToken
+                                    ? "cursor-pointer hover:bg-[#f8efe0]/16"
+                                    : "cursor-not-allowed opacity-45",
+                            ].join(" ")}
+                            type="button"
+                            disabled={!canUseFloodToken}
+                            title={canUseFloodToken
+                                ? "Convert one tile to river"
+                                : "Need flood token and valid target"}
+                            on:click={() => selectBuildAction("flood")}
+                        >
+                            <div class="text-3xl">≈</div>
+                            <div class="mt-1 text-xs uppercase tracking-wider">
+                                Flood
+                            </div>
+                            <div class="mt-2 text-xs font-black">
+                                Tokens: {me?.FloodTokens ?? 0}
+                            </div>
+                        </button>
+                    </div>
+
+                    <button
+                        class="mt-4 w-full cursor-pointer rounded-2xl bg-[#f8efe0]/10 px-5 py-3 font-black text-[#fff7e8] shadow-[0_6px_0_rgba(0,0,0,0.18)] ring-1 ring-[#f8efe0]/20 transition hover:bg-[#f8efe0]/16 active:translate-y-1"
+                        type="button"
+                        on:click={onPassBuild}
+                    >
+                        Pass
+                    </button>
                 </section>
-            {:else if error}
+            {/if}
+
+            {#if error}
                 <section
                     class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
                 >
@@ -801,10 +1139,10 @@
     }
 
     .resource-toast {
-        animation: toast-in 700ms ease-out;
+        animation: toast-pop 720ms ease-out;
     }
 
-    @keyframes toast-in {
+    @keyframes toast-pop {
         0% {
             transform: translateY(-8px);
             opacity: 0;
