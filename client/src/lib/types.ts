@@ -79,6 +79,23 @@ export type Player = {
   FloodworksBought?: number;
 };
 
+export type ResourceCostResponse = {
+  wood: number;
+  stone: number;
+  grain: number;
+  relic: number;
+};
+
+export type BuildCostsResponse = {
+  outpost: ResourceCostResponse;
+  city: ResourceCostResponse;
+  settlement: ResourceCostResponse;
+  blockade: ResourceCostResponse;
+  floodworks: ResourceCostResponse;
+};
+
+export type BuildCostsByPlayer = Record<string, BuildCostsResponse>;
+
 export type Tile = {
   X: number;
   Y: number;
@@ -151,6 +168,10 @@ export type RoomState = {
   players: RoomPlayer[];
   spectators: RoomSpectator[];
   game: GameState | null;
+
+  // Sent by backend in room_state.
+  // Keys are player ids as JSON object keys: "1", "2", etc.
+  buildCosts?: BuildCostsByPlayer;
 };
 
 export type ServerMessage =

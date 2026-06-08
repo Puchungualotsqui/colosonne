@@ -3,6 +3,7 @@
     import Lobby from "./components/Lobby.svelte";
     import type {
         BuildAction,
+        BuildCostsByPlayer,
         GameState,
         RoomIdentity,
         RoomState,
@@ -25,6 +26,7 @@
 
     let roomState: RoomState | null = null;
     let game: GameState | null = null;
+    let buildCosts: BuildCostsByPlayer = {};
 
     $: inRoom = roomId.length > 0;
     $: inLobby = inRoom && roomState?.status === "lobby";
@@ -141,11 +143,13 @@
                     currentPhase: msg.data.game?.CurrentPhase,
                     round: msg.data.game?.Round,
                     players: msg.data.players,
+                    buildCosts: msg.data.buildCosts,
                 });
 
                 roomState = msg.data;
                 roomId = msg.data.roomId;
                 game = msg.data.game;
+                buildCosts = msg.data.buildCosts ?? {};
                 loading = false;
                 error = "";
                 break;
@@ -153,6 +157,7 @@
             case "state":
                 roomId = msg.data.roomId;
                 game = msg.data.game;
+                buildCosts = {};
                 loading = false;
                 error = "";
                 break;
@@ -197,6 +202,7 @@
         role = "";
         roomState = null;
         game = null;
+        buildCosts = {};
         loading = false;
     }
 
@@ -273,6 +279,7 @@
         {playerId}
         {role}
         {error}
+        {buildCosts}
         onPick={(marketIndex) => socket?.send("pick", { marketIndex })}
         onPlaceTile={(handIndex, x, y) =>
             socket?.send("place_tile", { handIndex, x, y })}

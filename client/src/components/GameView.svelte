@@ -13,9 +13,11 @@
         GamePhase,
         Structure,
         type BuildAction,
+        type BuildCostsByPlayer,
         type DraftItem,
         type GameState,
         type Player,
+        type ResourceCostResponse,
         type TargetBuildAction,
     } from "../lib/types";
     import { debugLog } from "../lib/debug";
@@ -25,6 +27,7 @@
     export let playerId = 0;
     export let role: "player" | "spectator" | "" = "";
     export let error = "";
+    export let buildCosts: BuildCostsByPlayer = {};
 
     export let onPick: (marketIndex: number) => void;
     export let onPlaceTile: (handIndex: number, x: number, y: number) => void;
@@ -106,27 +109,32 @@
     let blockadeCost: Cost = {};
     let floodworksCost: Cost = {};
 
-    $: outpostCost = {
+    $: myBuildCosts = buildCosts[String(playerId)];
+
+    $: outpostCost = costFromServer(myBuildCosts?.outpost, {
         wood: 2 + activeBuiltCount(Structure.Outpost),
         stone: 1,
-    };
+    });
 
-    $: cityCost = {
+    $: cityCost = costFromServer(myBuildCosts?.city, {
         stone: 2,
         grain: 3 + activeBuiltCount(Structure.City),
-    };
+    });
 
-    $: settlementCost = {
+    $: settlementCost = costFromServer(myBuildCosts?.settlement, {
         wood: 2,
         stone: 2,
         grain: 2 + activeBuiltCount(Structure.Settlement),
-    };
+    });
 
-    $: blockadeCost = { wood: 1, grain: 1 };
+    $: blockadeCost = costFromServer(myBuildCosts?.blockade, {
+        wood: 1,
+        grain: 1,
+    });
 
-    $: floodworksCost = {
+    $: floodworksCost = costFromServer(myBuildCosts?.floodworks, {
         relic: 3 + (me?.FloodworksBought ?? 0) * 2,
-    };
+    });
 
     $: canAffordOutpost = canPay(me, outpostCost);
     $: canAffordCity = canPay(me, cityCost);
@@ -270,6 +278,20 @@
             resourceAmount(player, RES_GRAIN) >= (cost.grain ?? 0) &&
             resourceAmount(player, RES_RELIC) >= (cost.relic ?? 0)
         );
+    }
+
+    function costFromServer(
+        response: ResourceCostResponse | undefined,
+        fallback: Cost,
+    ): Cost {
+        if (!response) return fallback;
+
+        return {
+            wood: response.wood ?? 0,
+            stone: response.stone ?? 0,
+            grain: response.grain ?? 0,
+            relic: response.relic ?? 0,
+        };
     }
 
     function costTitle(cost: Cost, affordable: boolean, fallback: string) {
@@ -494,6 +516,14 @@
             currentPhase: game.CurrentPhase,
             selectedBuildAction,
             resources: me?.Resources,
+            backendCostsForMe: myBuildCosts,
+            shownCosts: {
+                outpost: outpostCost,
+                city: cityCost,
+                settlement: settlementCost,
+                blockade: blockadeCost,
+                floodworks: floodworksCost,
+            },
         });
 
         onBuild(action, x, y);

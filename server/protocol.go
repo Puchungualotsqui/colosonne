@@ -61,6 +61,21 @@ type UpdateSettingsPayload struct {
 	Spectators bool `json:"spectators"`
 }
 
+type ResourceCostResponse struct {
+	Wood  uint `json:"wood"`
+	Stone uint `json:"stone"`
+	Grain uint `json:"grain"`
+	Relic uint `json:"relic"`
+}
+
+type BuildCostsResponse struct {
+	Outpost    ResourceCostResponse `json:"outpost"`
+	City       ResourceCostResponse `json:"city"`
+	Settlement ResourceCostResponse `json:"settlement"`
+	Blockade   ResourceCostResponse `json:"blockade"`
+	Floodworks ResourceCostResponse `json:"floodworks"`
+}
+
 func decodeData[T any](raw json.RawMessage) (T, error) {
 	var payload T
 	err := json.Unmarshal(raw, &payload)

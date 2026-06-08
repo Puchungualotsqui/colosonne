@@ -389,6 +389,8 @@ func (r *Room) BroadcastState() {
 		})
 	}
 
+	buildCosts := buildCostsForGame(game)
+
 	r.mu.Unlock()
 
 	currentPhase := any(nil)
@@ -428,6 +430,7 @@ func (r *Room) BroadcastState() {
 			"players":    players,
 			"spectators": spectators,
 			"game":       game,
+			"buildCosts": buildCosts,
 		},
 	})
 }
@@ -548,4 +551,33 @@ func (r *Room) Kick(c *Client, targetPlayerID engine.PlayerId) error {
 	}
 
 	return nil
+}
+
+func buildCostsForGame(game *engine.GameState) map[engine.PlayerId]BuildCostsResponse {
+	out := make(map[engine.PlayerId]BuildCostsResponse)
+
+	if game == nil {
+		return out
+	}
+
+	for _, player := range game.Players {
+		out[player.Id] = BuildCostsResponse{
+			Outpost:    resourceCostResponse(game.OutpostCost(player.Id)),
+			City:       resourceCostResponse(game.CityCost(player.Id)),
+			Settlement: resourceCostResponse(game.SettlementCost(player.Id)),
+			Blockade:   resourceCostResponse(game.BlockadeCost()),
+			Floodworks: resourceCostResponse(game.FloodworksCost(player.Id)),
+		}
+	}
+
+	return out
+}
+
+func resourceCostResponse(cost map[engine.Resource]uint) ResourceCostResponse {
+	return ResourceCostResponse{
+		Wood:  cost[engine.Wood],
+		Stone: cost[engine.Stone],
+		Grain: cost[engine.Grain],
+		Relic: cost[engine.Relic],
+	}
 }
