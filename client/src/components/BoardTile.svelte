@@ -1,5 +1,6 @@
 <script lang="ts">
     import { createEventDispatcher, onDestroy } from "svelte";
+    import StructureGlyph from "./StructureGlyph.svelte";
     import { Structure, type Tile } from "../lib/types";
     import TileTooltip, {
         type InfluenceTooltipRow,
@@ -18,7 +19,6 @@
 
     export let biomeClass = "";
     export let structureLabel = "";
-    export let structureIcon = "";
     export let tooltip = "";
 
     export let tooltipTitle = "";
@@ -209,14 +209,18 @@
         </div>
     {:else if tile}
         {#if tile.Structure !== Structure.None}
-            <div
-                class={[
-                    "relative z-20 grid h-12 w-12 place-items-center rounded-2xl text-2xl font-black shadow-sm ring-2",
-                    structureOwnerClass(tile.StructureOwner),
-                ].join(" ")}
-                title={`${structureLabel} · P${tile.StructureOwner}`}
-            >
-                {structureIcon}
+            <div class="relative z-20">
+                <StructureGlyph
+                    structure={tile.Structure}
+                    owner={tile.StructureOwner === 1
+                        ? 1
+                        : tile.StructureOwner === 2
+                          ? 2
+                          : "neutral"}
+                    size="md"
+                    boxed
+                    title={`${structureLabel} · P${tile.StructureOwner}`}
+                />
             </div>
         {/if}
 

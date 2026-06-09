@@ -3,7 +3,6 @@
     import {
         biomeClass,
         biomeLabel,
-        structureIcon,
         structureLabel,
     } from "../lib/boardPresentation";
     import {
@@ -991,9 +990,6 @@
                         biomeClass={biomeClass(hex.tile, hex.candidate)}
                         structureLabel={hex.tile
                             ? structureLabel(hex.tile.Structure)
-                            : ""}
-                        structureIcon={hex.tile
-                            ? structureIcon(hex.tile.Structure)
                             : ""}
                         tooltip={tileTooltip(hex.tile, hex.candidate)}
                         tooltipTitle={tileTooltipTitle(hex.tile, hex.candidate)}

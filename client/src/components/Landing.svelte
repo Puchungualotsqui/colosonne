@@ -1,4 +1,6 @@
 <script lang="ts" context="module">
+    import type { StructureGlyphKind } from "./StructureGlyph.svelte";
+    import StructureGlyph from "./StructureGlyph.svelte";
     export type LandingUser = {
         authenticated: boolean;
         isGuest: boolean;
@@ -26,7 +28,15 @@
     let joinOpen = false;
     let roomCode = "";
 
-    const previewTiles = [
+    type PreviewTile = {
+        b: "mountain" | "plain" | "forest" | "river";
+        x: number;
+        y: number;
+        structure?: StructureGlyphKind;
+        owner?: "blue" | "red";
+    };
+
+    const previewTiles: PreviewTile[] = [
         { b: "mountain", x: 82, y: 0, structure: "watchtower", owner: "blue" },
         { b: "plain", x: 200, y: 0, structure: "city", owner: "red" },
         { b: "forest", x: 318, y: 0 },
@@ -157,50 +167,14 @@
                                 <div
                                     class="relative z-10 grid h-full w-full place-items-center"
                                 >
-                                    <div
-                                        class={[
-                                            "structure",
-                                            tile.owner === "blue"
-                                                ? "structure-blue"
-                                                : "structure-red",
-                                        ].join(" ")}
-                                    >
-                                        {#if tile.structure === "outpost"}
-                                            <div class="outpost-roof"></div>
-                                            <div class="outpost-body"></div>
-                                            <div class="outpost-flag"></div>
-                                        {:else if tile.structure === "city"}
-                                            <div
-                                                class="city-block city-block-a"
-                                            ></div>
-                                            <div
-                                                class="city-block city-block-b"
-                                            ></div>
-                                            <div
-                                                class="city-block city-block-c"
-                                            ></div>
-                                        {:else if tile.structure === "road"}
-                                            <div class="road-line"></div>
-                                            <div
-                                                class="road-node road-node-a"
-                                            ></div>
-                                            <div
-                                                class="road-node road-node-b"
-                                            ></div>
-                                        {:else if tile.structure === "bridge"}
-                                            <div class="bridge-deck"></div>
-                                            <div
-                                                class="bridge-arch bridge-arch-a"
-                                            ></div>
-                                            <div
-                                                class="bridge-arch bridge-arch-b"
-                                            ></div>
-                                        {:else if tile.structure === "watchtower"}
-                                            <div class="tower-top"></div>
-                                            <div class="tower-body"></div>
-                                            <div class="tower-legs"></div>
-                                        {/if}
-                                    </div>
+                                    <StructureGlyph
+                                        structure={tile.structure}
+                                        owner={tile.owner === "blue"
+                                            ? "blue"
+                                            : "red"}
+                                        size="lg"
+                                        boxed
+                                    />
                                 </div>
                             {/if}
                         </div>
@@ -342,181 +316,5 @@
             6.7% 75%,
             6.7% 25%
         );
-    }
-
-    .structure {
-        position: relative;
-        width: 62px;
-        height: 58px;
-        filter: drop-shadow(0 5px 3px rgba(43, 29, 18, 0.38));
-    }
-
-    .structure-blue {
-        --player-main: #1d4e89;
-        --player-dark: #12385f;
-        --player-light: #8fc7ff;
-    }
-
-    .structure-red {
-        --player-main: #b94b3f;
-        --player-dark: #7d2d27;
-        --player-light: #ffc1aa;
-    }
-
-    /* Outpost */
-    .outpost-roof {
-        position: absolute;
-        left: 11px;
-        top: 8px;
-        width: 40px;
-        height: 24px;
-        background: var(--player-main);
-        clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
-        border: 2px solid var(--player-dark);
-    }
-
-    .outpost-body {
-        position: absolute;
-        left: 18px;
-        top: 29px;
-        width: 26px;
-        height: 20px;
-        border-radius: 4px;
-        background: #f8efe0;
-        border: 2px solid var(--player-dark);
-    }
-
-    .outpost-flag {
-        position: absolute;
-        left: 38px;
-        top: 5px;
-        width: 14px;
-        height: 10px;
-        background: var(--player-light);
-        clip-path: polygon(0 0, 100% 20%, 0 100%);
-    }
-
-    /* City */
-    .city-block {
-        position: absolute;
-        bottom: 8px;
-        background: var(--player-main);
-        border: 2px solid var(--player-dark);
-        border-radius: 4px 4px 2px 2px;
-    }
-
-    .city-block-a {
-        left: 7px;
-        width: 18px;
-        height: 27px;
-    }
-
-    .city-block-b {
-        left: 23px;
-        width: 20px;
-        height: 40px;
-        background: var(--player-light);
-    }
-
-    .city-block-c {
-        left: 41px;
-        width: 15px;
-        height: 31px;
-    }
-
-    /* Road */
-    .road-line {
-        position: absolute;
-        left: 5px;
-        top: 27px;
-        width: 53px;
-        height: 10px;
-        transform: rotate(-24deg);
-        border-radius: 999px;
-        background: var(--player-dark);
-        box-shadow: inset 0 0 0 3px var(--player-main);
-    }
-
-    .road-node {
-        position: absolute;
-        width: 15px;
-        height: 15px;
-        border-radius: 999px;
-        background: #f8efe0;
-        border: 3px solid var(--player-dark);
-    }
-
-    .road-node-a {
-        left: 4px;
-        top: 35px;
-    }
-
-    .road-node-b {
-        right: 5px;
-        top: 12px;
-    }
-
-    /* Bridge */
-    .bridge-deck {
-        position: absolute;
-        left: 6px;
-        top: 25px;
-        width: 50px;
-        height: 11px;
-        border-radius: 999px;
-        background: var(--player-dark);
-        box-shadow: inset 0 0 0 3px var(--player-main);
-    }
-
-    .bridge-arch {
-        position: absolute;
-        top: 26px;
-        width: 20px;
-        height: 20px;
-        border: 4px solid var(--player-light);
-        border-bottom: 0;
-        border-radius: 20px 20px 0 0;
-    }
-
-    .bridge-arch-a {
-        left: 10px;
-    }
-
-    .bridge-arch-b {
-        right: 10px;
-    }
-
-    /* Watchtower */
-    .tower-top {
-        position: absolute;
-        left: 17px;
-        top: 5px;
-        width: 28px;
-        height: 16px;
-        border-radius: 4px;
-        background: var(--player-main);
-        border: 2px solid var(--player-dark);
-    }
-
-    .tower-body {
-        position: absolute;
-        left: 23px;
-        top: 19px;
-        width: 16px;
-        height: 27px;
-        background: #f8efe0;
-        border: 2px solid var(--player-dark);
-    }
-
-    .tower-legs {
-        position: absolute;
-        left: 16px;
-        top: 43px;
-        width: 30px;
-        height: 13px;
-        border-left: 4px solid var(--player-dark);
-        border-right: 4px solid var(--player-dark);
-        border-bottom: 4px solid var(--player-dark);
-        transform: perspective(20px) rotateX(12deg);
     }
 </style>

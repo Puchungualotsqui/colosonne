@@ -54,20 +54,3 @@ export function structureLabel(structure: Structure) {
       return "";
   }
 }
-
-export function structureIcon(structure: Structure) {
-  switch (structure) {
-    case Structure.Outpost:
-      return "⌂";
-    case Structure.City:
-      return "▦";
-    case Structure.Settlement:
-      return "◈";
-    case Structure.Bridge:
-      return "⌒";
-    case Structure.Watchtower:
-      return "♜";
-    default:
-      return "";
-  }
-}
