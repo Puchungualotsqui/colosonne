@@ -154,7 +154,7 @@ func (gs *GameState) BuildBlockade(playerId PlayerId, x, y int) error {
 		return errors.New("blockade must be adjacent to your controlled territory")
 	}
 
-	cost := gs.BlockadeCost()
+	cost := gs.BlockadeCost(playerId)
 	if err := gs.PayResources(playerId, cost); err != nil {
 		return err
 	}

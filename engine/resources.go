@@ -38,8 +38,8 @@ func (gs *GameState) OutpostCost(playerId PlayerId) map[Resource]uint {
 	outposts := gs.CountActiveStructures(playerId, Outpost)
 
 	return map[Resource]uint{
-		Wood:  2 + outposts,
-		Stone: 1,
+		Wood:  2 + outposts*2,
+		Stone: 1 + outposts/2,
 	}
 }
 
@@ -47,8 +47,8 @@ func (gs *GameState) CityCost(playerId PlayerId) map[Resource]uint {
 	cities := gs.CountActiveStructures(playerId, City)
 
 	return map[Resource]uint{
-		Stone: 2,
-		Grain: 3 + cities,
+		Stone: 3 + cities,
+		Grain: 4 + cities*2,
 	}
 }
 
@@ -56,16 +56,18 @@ func (gs *GameState) SettlementCost(playerId PlayerId) map[Resource]uint {
 	settlements := gs.CountActiveStructures(playerId, Settlement)
 
 	return map[Resource]uint{
-		Wood:  2,
-		Stone: 2,
-		Grain: 2 + settlements,
+		Wood:  2 + settlements,
+		Stone: 2 + settlements,
+		Grain: 3 + settlements*2,
 	}
 }
 
-func (gs *GameState) BlockadeCost() map[Resource]uint {
+func (gs *GameState) BlockadeCost(playerId PlayerId) map[Resource]uint {
+	blockades := gs.CountPlayerBlockades(playerId)
+
 	return map[Resource]uint{
-		Wood:  1,
-		Grain: 1,
+		Wood:  1 + blockades,
+		Grain: 1 + blockades,
 	}
 }
 
@@ -76,7 +78,7 @@ func (gs *GameState) FloodworksCost(playerId PlayerId) map[Resource]uint {
 	}
 
 	return map[Resource]uint{
-		Relic: 3 + player.FloodworksBought*2,
+		Relic: 3 + player.FloodworksBought*3,
 	}
 }
 
@@ -99,6 +101,20 @@ func (gs *GameState) CountActiveStructures(playerId PlayerId, structure Structur
 		}
 
 		count++
+	}
+
+	return count
+}
+
+func (gs *GameState) CountPlayerBlockades(playerId PlayerId) uint {
+	var count uint
+
+	for i := range gs.Map {
+		tile := &gs.Map[i]
+
+		if tile.HasBlockade && tile.BlockadeOwner == playerId {
+			count++
+		}
 	}
 
 	return count

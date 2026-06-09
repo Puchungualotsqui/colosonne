@@ -576,7 +576,7 @@ func buildCostsForGame(game *engine.GameState) map[engine.PlayerId]BuildCostsRes
 			Outpost:    resourceCostResponse(game.OutpostCost(player.Id)),
 			City:       resourceCostResponse(game.CityCost(player.Id)),
 			Settlement: resourceCostResponse(game.SettlementCost(player.Id)),
-			Blockade:   resourceCostResponse(game.BlockadeCost()),
+			Blockade:   resourceCostResponse(game.BlockadeCost(player.Id)),
 			Floodworks: resourceCostResponse(game.FloodworksCost(player.Id)),
 		}
 	}
