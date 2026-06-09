@@ -471,7 +471,7 @@
             case Structure.Bridge:
                 return (
                     tile.Biome === Biome.River &&
-                    hasAdjacentControlledTile(tile.X, tile.Y)
+                    tile.Structure === Structure.None
                 );
 
             case Structure.Watchtower:

@@ -241,10 +241,6 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 			return errors.New("bridge can only be built on river tiles")
 		}
 
-		if !gs.hasAdjacentControlledTile(playerId, x, y) {
-			return errors.New("bridge must be adjacent to your controlled territory")
-		}
-
 		tile.Structure = Bridge
 		tile.StructureOwner = playerId
 

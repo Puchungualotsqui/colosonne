@@ -82,7 +82,7 @@
     >
         {#each marketSlots as item, slotIndex (slotIndex)}
             <div
-                class="relative h-32 rounded-2xl bg-[#102832] p-1 shadow-[inset_0_3px_8px_rgba(0,0,0,0.35),0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#f8efe0]/10"
+                class="h-32 rounded-2xl bg-[#102832] p-1 shadow-[inset_0_3px_8px_rgba(0,0,0,0.35),0_1px_0_rgba(255,255,255,0.05)] ring-1 ring-[#f8efe0]/10"
             >
                 {#if item}
                     <CardTooltip {item} hint={canPick ? "Click to draft" : ""}>

@@ -11,6 +11,7 @@
         type Tile,
     } from "../lib/types";
     import { debugLog } from "../lib/debug";
+    import BoardTile from "./BoardTile.svelte";
 
     export let game: GameState;
     export let playerId = 0;
@@ -33,6 +34,14 @@
         y: number,
     ) => void;
 
+    type InfluenceTooltipRow = {
+        playerId: number;
+        influence: number;
+        tempInfluence: number;
+        total: number;
+        leading: boolean;
+    };
+
     type Coord = {
         x: number;
         y: number;
@@ -45,6 +54,24 @@
         tile?: Tile;
         candidate: boolean;
         ghost: boolean;
+    };
+
+    type InfluenceLeader = {
+        playerId: number;
+        value: number;
+        tied: boolean;
+        total: number;
+    };
+
+    type TargetIntent =
+        | { kind: "none" }
+        | { kind: "placeTile"; handIndex: number }
+        | { kind: "draft"; handIndex: number; item: DraftItem }
+        | { kind: "build"; action: TargetBuildAction };
+
+    type HexTargetStatus = {
+        clickable: boolean;
+        dimmed: boolean;
     };
 
     const HEX_W = 112;
@@ -77,6 +104,19 @@
     $: placementShell = placementCandidates(game.Map);
     $: renderHexes = buildRenderHexes(game.Map, placementShell, canPlaceTile);
     $: boardSize = calculateBoardSize(renderHexes);
+
+    let targetIntent: TargetIntent = { kind: "none" };
+
+    $: targetIntent = getTargetIntent();
+
+    $: debugLog("board.targeting.state", {
+        isMyTurn,
+        currentPhase: game.CurrentPhase,
+        selectedBuildAction,
+        selectedHandIndex,
+        selectedHandItem,
+        targetIntent,
+    });
 
     function key(x: number, y: number) {
         return `${x},${y}`;
@@ -176,6 +216,111 @@
             width: Math.max(620, maxLeft + HEX_W + PAD),
             height: Math.max(440, maxTop + HEX_H + PAD),
         };
+    }
+
+    function influenceEntries(tile: Tile | undefined) {
+        if (!tile) return [];
+
+        return Object.entries(tile.Influence ?? {})
+            .map(([playerId, value]) => ({
+                playerId: Number(playerId),
+                value: Number(value),
+            }))
+            .filter((entry) => entry.value > 0);
+    }
+
+    function influenceLeader(tile: Tile | undefined): InfluenceLeader | null {
+        const entries = influenceEntries(tile);
+
+        if (entries.length === 0) return null;
+
+        let bestPlayer = 0;
+        let bestValue = 0;
+        let tied = false;
+        let total = 0;
+
+        for (const entry of entries) {
+            total += entry.value;
+
+            if (entry.value > bestValue) {
+                bestPlayer = entry.playerId;
+                bestValue = entry.value;
+                tied = false;
+            } else if (entry.value === bestValue) {
+                tied = true;
+            }
+        }
+
+        return {
+            playerId: bestPlayer,
+            value: bestValue,
+            tied,
+            total,
+        };
+    }
+
+    function tileAuraOwner(tile: Tile | undefined) {
+        if (!tile) return 0;
+
+        const leader = influenceLeader(tile);
+
+        // If visible influence exists, use it.
+        if (leader) {
+            if (leader.tied) return 3;
+            if (leader.playerId === 1) return 1;
+            if (leader.playerId === 2) return 2;
+        }
+
+        // Fallback: use ownership.
+        // This is what makes the empire outline visible even after Influence is empty
+        // or only recalculated temporarily.
+        if (tile.HasOwner) {
+            if (tile.Owner === 1) return 1;
+            if (tile.Owner === 2) return 2;
+        }
+
+        return 0;
+    }
+
+    function sameAuraGroup(a: Tile | undefined, b: Tile | undefined) {
+        const ownerA = tileAuraOwner(a);
+        const ownerB = tileAuraOwner(b);
+
+        // Tied influence should not connect into a player empire mass.
+        if (ownerA === 3 || ownerB === 3) return false;
+
+        return ownerA > 0 && ownerA === ownerB;
+    }
+
+    function auraEdgesForTile(tile: Tile | undefined) {
+        if (!tile) return [false, false, false, false, false, false];
+
+        const owner = tileAuraOwner(tile);
+        if (owner === 0) return [false, false, false, false, false, false];
+
+        // Neighbor order from hexNeighbors:
+        // 0 E, 1 NE, 2 NW, 3 W, 4 SW, 5 SE
+        //
+        // Edge order in BoardTile:
+        // 0 top-right, 1 right, 2 bottom-right, 3 bottom-left, 4 left, 5 top-left
+        const neighborToEdge = [1, 0, 5, 4, 3, 2];
+
+        const edges = [false, false, false, false, false, false];
+        const neighbors = hexNeighbors(tile.X, tile.Y);
+
+        for (let i = 0; i < neighbors.length; i++) {
+            const n = neighbors[i];
+            const neighborTile = game.Map.find(
+                (t) => t.X === n.x && t.Y === n.y,
+            );
+            const edgeIndex = neighborToEdge[i];
+
+            // Show an edge only when this side touches non-matching territory,
+            // no tile, enemy tile, neutral tile, or tied area.
+            edges[edgeIndex] = !sameAuraGroup(tile, neighborTile);
+        }
+
+        return edges;
     }
 
     function biomeClass(tile: Tile | undefined, candidate: boolean) {
@@ -282,6 +427,12 @@
         });
     }
 
+    function canBuildBridgeOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        return tile.Biome === Biome.River && tile.Structure === Structure.None;
+    }
+
     function isEnemyControlledTile(tile: Tile | undefined) {
         return !!tile && tile.HasOwner && tile.Owner !== playerId;
     }
@@ -367,10 +518,7 @@
 
             switch (item.Structure) {
                 case Structure.Bridge:
-                    return (
-                        tile.Biome === Biome.River &&
-                        hasAdjacentControlledTile(tile.X, tile.Y)
-                    );
+                    return canBuildBridgeOnTile(tile);
 
                 case Structure.Watchtower:
                     return (
@@ -402,37 +550,55 @@
         return false;
     }
 
+    function canBuildOutpostOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        return tile.Biome !== Biome.River && tile.Structure === Structure.None;
+    }
+
+    function canBuildSettlementOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        return (
+            tile.Biome !== Biome.River &&
+            tile.Structure === Structure.None &&
+            controlsTile(tile)
+        );
+    }
+
+    function canUpgradeCityOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        return (
+            tile.Structure === Structure.Outpost &&
+            tile.StructureOwner === playerId
+        );
+    }
+
+    function canUseFloodOnTile(tile: Tile | undefined) {
+        if (!tile) return false;
+
+        return tile.Biome !== Biome.River && tile.Structure === Structure.None;
+    }
+
     function isValidBuildTarget(tile: Tile | undefined) {
         if (!canBuild || !selectedBuildAction || !tile) return false;
 
         switch (selectedBuildAction) {
             case "outpost":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None
-                );
+                return canBuildOutpostOnTile(tile);
 
             case "settlement":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None &&
-                    controlsTile(tile)
-                );
+                return canBuildSettlementOnTile(tile);
 
             case "city":
-                return (
-                    tile.Structure === Structure.Outpost &&
-                    tile.StructureOwner === playerId
-                );
+                return canUpgradeCityOnTile(tile);
 
             case "blockade":
                 return canBuildBlockadeOnTile(tile);
 
             case "flood":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None
-                );
+                return canUseFloodOnTile(tile);
 
             default:
                 return false;
@@ -482,60 +648,58 @@
                 switch (selectedBuildAction) {
                     case "outpost":
                         return "Build Outpost";
+
                     case "settlement":
                         return "Build Settlement";
+
                     case "city":
                         return "Upgrade Outpost to City";
+
                     case "blockade":
                         return blockadeTargetMessage(tile);
+
                     case "flood":
                         return "Convert to River";
                 }
             }
 
-            if (selectedBuildAction === "settlement") {
-                return settlementTargetMessage(tile);
-            }
+            switch (selectedBuildAction) {
+                case "outpost":
+                    if (tile.Biome === Biome.River) {
+                        return "Outpost cannot be built on River";
+                    }
 
-            if (selectedBuildAction === "blockade") {
-                return blockadeTargetMessage(tile);
-            }
+                    if (tile.Structure !== Structure.None) {
+                        return "Tile already has a structure";
+                    }
 
-            if (selectedBuildAction === "city") {
-                if (tile.Structure === Structure.Outpost) {
-                    return tile.StructureOwner === playerId
-                        ? "Upgrade Outpost to City"
-                        : "Requires your own outpost";
-                }
+                    return "Invalid Outpost target";
 
-                return "Requires your outpost";
-            }
+                case "settlement":
+                    return settlementTargetMessage(tile);
 
-            if (selectedBuildAction === "flood") {
-                if (tile.Biome === Biome.River) return "Already river";
-                if (tile.Structure !== Structure.None)
-                    return "Cannot flood a structure";
-            }
+                case "city":
+                    if (tile.Structure === Structure.Outpost) {
+                        return tile.StructureOwner === playerId
+                            ? "Upgrade Outpost to City"
+                            : "Requires your own Outpost";
+                    }
 
-            if (tile.Biome === Biome.River) {
-                if (tile.Structure === Structure.Bridge) {
-                    return "Bridged river";
-                }
+                    return "City requires your own Outpost";
 
-                if (
-                    selectedHandItem?.Kind === DraftKind.Structure &&
-                    selectedHandItem.Structure === Structure.Bridge
-                ) {
-                    return hasAdjacentControlledTile(tile.X, tile.Y)
-                        ? "Build Bridge"
-                        : "Bridge needs adjacent controlled tile";
-                }
+                case "blockade":
+                    return blockadeTargetMessage(tile);
 
-                return "River blocks normal control";
-            }
+                case "flood":
+                    if (tile.Biome === Biome.River) {
+                        return "Already river";
+                    }
 
-            if (tile.Structure !== Structure.None) {
-                return "Tile already has a structure";
+                    if (tile.Structure !== Structure.None) {
+                        return "Cannot flood a structure";
+                    }
+
+                    return "Invalid Flood target";
             }
         }
 
@@ -556,24 +720,10 @@
         return `${biomeLabel(tile.Biome)} · ${owner} · ${structure}`;
     }
 
-    function handleHexPointerDown(hex: RenderHex) {
-        debugLog("board.hex.pointerdown", {
-            x: hex.x,
-            y: hex.y,
-            isClickable: isClickable(hex),
-            canBuild,
-            selectedBuildAction,
-            selectedHandIndex,
-            selectedHandItem,
-            tile: hex.tile,
-        });
+    function handleHexSelect(hex: RenderHex) {
+        const status = getHexTargetStatus(hex);
 
-        if (!isClickable(hex)) return;
-        handleHexClick(hex);
-    }
-
-    function handleHexClick(hex: RenderHex) {
-        debugLog("board.hex.click", {
+        debugLog("board.hex.select", {
             x: hex.x,
             y: hex.y,
             hasTile: !!hex.tile,
@@ -586,50 +736,371 @@
             selectedBuildAction,
             selectedHandIndex,
             selectedHandItem,
-            canBuild,
-            canPlaceTile,
-            canUseDraft,
-            isClickable: isClickable(hex),
-            isValidBuildTarget: hex.tile ? isValidBuildTarget(hex.tile) : false,
-            isValidDraftTarget: hex.tile
-                ? isValidDraftTarget(selectedHandItem, hex.tile)
-                : false,
+            targetIntent,
+            clickable: status.clickable,
+            dimmed: status.dimmed,
             tile: hex.tile,
         });
 
-        if (hex.candidate && canPlaceTile) {
-            onPlaceTile(selectedHandIndex, hex.x, hex.y);
-            return;
-        }
+        if (!status.clickable) return;
 
-        if (!hex.tile) return;
+        switch (targetIntent.kind) {
+            case "placeTile":
+                if (!hex.candidate) return;
+                onPlaceTile(targetIntent.handIndex, hex.x, hex.y);
+                return;
 
-        if (canUseDraft && isValidDraftTarget(selectedHandItem, hex.tile)) {
-            onUseDraft(selectedHandIndex, hex.tile.X, hex.tile.Y);
-            return;
-        }
+            case "draft":
+                if (!hex.tile) return;
+                onUseDraft(targetIntent.handIndex, hex.tile.X, hex.tile.Y);
+                return;
 
-        if (canBuild && selectedBuildAction && isValidBuildTarget(hex.tile)) {
-            onBuild(selectedBuildAction, hex.tile.X, hex.tile.Y);
+            case "build":
+                if (!hex.tile) return;
+                onBuild(targetIntent.action, hex.tile.X, hex.tile.Y);
+                return;
+
+            case "none":
+                return;
         }
     }
 
-    function isClickable(hex: RenderHex) {
-        if (hex.candidate && canPlaceTile) return true;
-
+    function getTargetIntent(): TargetIntent {
         if (
-            hex.tile &&
-            canUseDraft &&
-            isValidDraftTarget(selectedHandItem, hex.tile)
+            isMyTurn &&
+            game.CurrentPhase === GamePhase.Place &&
+            selectedHandIndex >= 0 &&
+            selectedHandItem?.Kind === DraftKind.Tile
         ) {
-            return true;
+            return {
+                kind: "placeTile",
+                handIndex: selectedHandIndex,
+            };
         }
 
-        if (hex.tile && canBuild && isValidBuildTarget(hex.tile)) {
-            return true;
+        if (
+            isMyTurn &&
+            game.CurrentPhase === GamePhase.Place &&
+            selectedHandIndex >= 0 &&
+            selectedHandItem !== null &&
+            selectedHandItem.Kind !== DraftKind.Tile &&
+            draftNeedsBoardTarget(selectedHandItem)
+        ) {
+            return {
+                kind: "draft",
+                handIndex: selectedHandIndex,
+                item: selectedHandItem,
+            };
+        }
+
+        if (
+            isMyTurn &&
+            game.CurrentPhase === GamePhase.Build &&
+            selectedBuildAction !== null
+        ) {
+            return {
+                kind: "build",
+                action: selectedBuildAction,
+            };
+        }
+
+        return { kind: "none" };
+    }
+
+    function isTargetingExistingTile(intent: TargetIntent) {
+        return intent.kind === "draft" || intent.kind === "build";
+    }
+
+    function isValidTargetForIntent(
+        intent: TargetIntent,
+        tile: Tile | undefined,
+    ) {
+        if (!tile) return false;
+
+        switch (intent.kind) {
+            case "draft":
+                return isValidDraftTarget(intent.item, tile);
+
+            case "build":
+                switch (intent.action) {
+                    case "outpost":
+                        return canBuildOutpostOnTile(tile);
+
+                    case "settlement":
+                        return canBuildSettlementOnTile(tile);
+
+                    case "city":
+                        return canUpgradeCityOnTile(tile);
+
+                    case "blockade":
+                        return canBuildBlockadeOnTile(tile);
+
+                    case "flood":
+                        return canUseFloodOnTile(tile);
+
+                    default:
+                        return false;
+                }
+
+            default:
+                return false;
+        }
+    }
+
+    function getHexTargetStatus(hex: RenderHex): HexTargetStatus {
+        const intent = targetIntent;
+
+        if (intent.kind === "none") {
+            return {
+                clickable: false,
+                dimmed: false,
+            };
+        }
+
+        if (intent.kind === "placeTile") {
+            return {
+                clickable: hex.candidate,
+                dimmed: false,
+            };
+        }
+
+        if (!hex.tile) {
+            return {
+                clickable: false,
+                dimmed: false,
+            };
+        }
+
+        const valid = isValidTargetForIntent(intent, hex.tile);
+
+        return {
+            clickable: valid,
+            dimmed: isTargetingExistingTile(intent) && !valid,
+        };
+    }
+
+    let hoveredStructureKey = "";
+    let hoveredStructureInfluence = new Set<string>();
+    let hoveredStructureOwner = 0;
+
+    function tileAt(x: number, y: number) {
+        return game.Map.find((tile) => tile.X === x && tile.Y === y);
+    }
+
+    function canReceiveInfluencePreview(tile: Tile | undefined) {
+        if (!tile) return false;
+        if (tile.Biome === Biome.River && tile.Structure !== Structure.Bridge) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function hexRingRadius2(x: number, y: number): Coord[] {
+        const results: Coord[] = [];
+
+        for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+                const dz = -dx - dy;
+
+                if (
+                    (Math.abs(dx) === 2 ||
+                        Math.abs(dy) === 2 ||
+                        Math.abs(dz) === 2) &&
+                    Math.abs(dx) <= 2 &&
+                    Math.abs(dy) <= 2 &&
+                    Math.abs(dz) <= 2
+                ) {
+                    results.push({ x: x + dx, y: y + dy });
+                }
+            }
+        }
+
+        return results;
+    }
+
+    function isUnbridgedRiver(tile: Tile | undefined) {
+        return (
+            !!tile &&
+            tile.Biome === Biome.River &&
+            tile.Structure !== Structure.Bridge
+        );
+    }
+
+    function canInfluenceDistance2Preview(
+        fromX: number,
+        fromY: number,
+        toX: number,
+        toY: number,
+    ) {
+        for (const a of hexNeighbors(fromX, fromY)) {
+            for (const b of hexNeighbors(toX, toY)) {
+                if (a.x !== b.x || a.y !== b.y) continue;
+
+                const middle = tileAt(a.x, a.y);
+                if (!middle) continue;
+
+                if (!isUnbridgedRiver(middle)) {
+                    return true;
+                }
+            }
         }
 
         return false;
+    }
+
+    function structureInfluenceCoords(tile: Tile | undefined) {
+        if (!tile) return [];
+
+        const coords: Coord[] = [];
+
+        function addCoord(x: number, y: number) {
+            const target = tileAt(x, y);
+            if (!canReceiveInfluencePreview(target)) return;
+
+            coords.push({ x, y });
+        }
+
+        switch (tile.Structure) {
+            case Structure.Settlement:
+                addCoord(tile.X, tile.Y);
+                break;
+
+            case Structure.Outpost:
+                addCoord(tile.X, tile.Y);
+
+                for (const n of hexNeighbors(tile.X, tile.Y)) {
+                    addCoord(n.x, n.y);
+                }
+
+                break;
+
+            case Structure.City:
+                addCoord(tile.X, tile.Y);
+                break;
+
+            case Structure.Watchtower:
+                addCoord(tile.X, tile.Y);
+
+                for (const n of hexNeighbors(tile.X, tile.Y)) {
+                    addCoord(n.x, n.y);
+                }
+
+                for (const n of hexRingRadius2(tile.X, tile.Y)) {
+                    if (
+                        canInfluenceDistance2Preview(tile.X, tile.Y, n.x, n.y)
+                    ) {
+                        addCoord(n.x, n.y);
+                    }
+                }
+
+                break;
+
+            case Structure.Bridge:
+                addCoord(tile.X, tile.Y);
+
+                for (const n of hexNeighbors(tile.X, tile.Y)) {
+                    addCoord(n.x, n.y);
+                }
+
+                break;
+        }
+
+        return coords;
+    }
+
+    function handleStructureHover(tile: Tile | undefined) {
+        if (!tile || tile.Structure === Structure.None) {
+            hoveredStructureKey = "";
+            hoveredStructureInfluence = new Set();
+            hoveredStructureOwner = 0;
+            return;
+        }
+
+        hoveredStructureKey = key(tile.X, tile.Y);
+        hoveredStructureOwner = tile.StructureOwner;
+
+        hoveredStructureInfluence = new Set(
+            structureInfluenceCoords(tile).map((coord) =>
+                key(coord.x, coord.y),
+            ),
+        );
+    }
+
+    function clearStructureHover() {
+        hoveredStructureKey = "";
+        hoveredStructureInfluence = new Set();
+        hoveredStructureOwner = 0;
+    }
+
+    function isStructurePreviewed(hex: RenderHex) {
+        if (!hex.tile) return false;
+        if (!hoveredStructureKey) return false;
+
+        return hoveredStructureInfluence.has(key(hex.tile.X, hex.tile.Y));
+    }
+
+    function tileInfluenceRows(tile: Tile | undefined): InfluenceTooltipRow[] {
+        if (!tile) return [];
+
+        const rows = game.Players.map((player) => {
+            const influence = Number(tile.Influence?.[player.Id] ?? 0);
+            const tempInfluence = Number(tile.TempInfluence?.[player.Id] ?? 0);
+
+            return {
+                playerId: player.Id,
+                influence,
+                tempInfluence,
+                total: influence + tempInfluence,
+                leading: false,
+            };
+        }).filter((row) => row.total > 0);
+
+        if (rows.length === 0) return [];
+
+        const best = Math.max(...rows.map((row) => row.total));
+
+        return rows
+            .map((row) => ({
+                ...row,
+                leading: row.total === best && best > 0,
+            }))
+            .sort((a, b) => b.total - a.total);
+    }
+
+    function tileTooltipTitle(tile: Tile | undefined, candidate: boolean) {
+        if (candidate) return "Place tile";
+        if (!tile) return "";
+
+        const biome = biomeLabel(tile.Biome);
+        const owner = tile.HasOwner ? `P${tile.Owner}` : "Open";
+        const structure =
+            tile.Structure !== Structure.None
+                ? structureLabel(tile.Structure)
+                : "No structure";
+
+        return `${biome} · ${owner}`;
+    }
+
+    function tileTooltipSubtitle(tile: Tile | undefined, candidate: boolean) {
+        if (candidate) return "Empty placement candidate";
+        if (!tile) return "";
+
+        const parts: string[] = [];
+
+        if (tile.Structure !== Structure.None) {
+            parts.push(structureLabel(tile.Structure));
+        }
+
+        if (tile.HasBlockade) {
+            parts.push(`Blockaded by P${tile.BlockadeOwner}`);
+        }
+
+        if (tile.Biome === Biome.River && tile.Structure !== Structure.Bridge) {
+            parts.push("Unbridged river");
+        }
+
+        return parts.join(" · ");
     }
 </script>
 
@@ -657,97 +1128,44 @@
                 style={`width: ${boardSize.width}px; height: ${boardSize.height}px;`}
             >
                 {#each renderHexes as hex}
-                    <button
-                        class={[
-                            "group clip-hex absolute flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
-                            biomeClass(hex.tile, hex.candidate),
-                            isClickable(hex)
-                                ? "cursor-pointer ring-4 ring-[#f2c36b] ring-offset-2 ring-offset-[#d9c291] hover:-translate-y-1 hover:brightness-110"
-                                : "cursor-default",
-                            hex.candidate ? "border-dashed opacity-85" : "",
-                            hex.ghost ? "pointer-events-none opacity-0" : "",
-                            (canBuild || canUseDraft) &&
-                            hex.tile &&
-                            !isClickable(hex)
-                                ? "opacity-55"
-                                : "",
-                        ].join(" ")}
-                        style={`left: ${hex.left}px; top: ${hex.top}px; width: ${HEX_W}px; height: ${HEX_H}px;`}
-                        type="button"
-                        disabled={!isClickable(hex)}
-                        aria-label={tileTooltip(hex.tile, hex.candidate)}
-                        on:pointerdown|preventDefault={() =>
-                            handleHexPointerDown(hex)}
-                    >
-                        <div
-                            class="pointer-events-none absolute inset-[5px] clip-hex border border-white/25"
-                        ></div>
+                    {@const targetStatus = getHexTargetStatus(hex)}
 
-                        {#if hex.candidate}
-                            <div
-                                class="relative z-10 grid h-10 w-10 place-items-center rounded-full bg-[#f8efe0]/70 text-2xl font-black text-[#6b4a2f]"
-                            >
-                                +
-                            </div>
-                        {:else if hex.tile}
-                            {#if hex.tile.Structure !== Structure.None}
-                                <div
-                                    class="relative z-10 grid h-12 w-12 place-items-center rounded-2xl bg-[#f8efe0]/70 text-2xl font-black text-[#142833] shadow-sm"
-                                    title={structureLabel(hex.tile.Structure)}
-                                >
-                                    {structureIcon(hex.tile.Structure)}
-                                </div>
-                            {/if}
-
-                            {#if hex.tile.HasBlockade}
-                                <div
-                                    class={[
-                                        "absolute right-3 top-3 z-20 grid h-6 w-6 place-items-center rounded-full text-xs font-black shadow-sm",
-                                        hex.tile.BlockadeOwner === 1
-                                            ? "bg-[#1d4e89] text-white"
-                                            : hex.tile.BlockadeOwner === 2
-                                              ? "bg-[#b94b3f] text-white"
-                                              : "bg-[#142833] text-white",
-                                    ].join(" ")}
-                                    title={`Blockade P${hex.tile.BlockadeOwner}`}
-                                >
-                                    ✕
-                                </div>
-                            {/if}
-
-                            {#if hex.tile.HasOwner}
-                                <div
-                                    class={[
-                                        "absolute bottom-2 left-1/2 z-20 h-5 min-w-8 -translate-x-1/2 rounded-full px-2 text-[10px] font-black leading-5 shadow-sm",
-                                        ownerClass(hex.tile),
-                                    ].join(" ")}
-                                >
-                                    {ownerLabel(hex.tile)}
-                                </div>
-                            {/if}
-                        {/if}
-
-                        <div
-                            class="pointer-events-none absolute bottom-[calc(100%+8px)] left-1/2 z-50 hidden w-max max-w-[220px] -translate-x-1/2 rounded-xl bg-[#142833] px-3 py-2 text-xs font-bold text-[#f8efe0] shadow-xl ring-1 ring-white/10 group-hover:block"
-                        >
-                            {tileTooltip(hex.tile, hex.candidate)}
-                        </div>
-                    </button>
+                    <BoardTile
+                        left={hex.left}
+                        top={hex.top}
+                        width={HEX_W}
+                        height={HEX_H}
+                        tile={hex.tile}
+                        candidate={hex.candidate}
+                        ghost={hex.ghost}
+                        clickable={targetStatus.clickable}
+                        dimmed={targetStatus.dimmed}
+                        biomeClass={biomeClass(hex.tile, hex.candidate)}
+                        ownerClass={hex.tile ? ownerClass(hex.tile) : ""}
+                        ownerLabel={hex.tile ? ownerLabel(hex.tile) : ""}
+                        structureLabel={hex.tile
+                            ? structureLabel(hex.tile.Structure)
+                            : ""}
+                        structureIcon={hex.tile
+                            ? structureIcon(hex.tile.Structure)
+                            : ""}
+                        tooltip={tileTooltip(hex.tile, hex.candidate)}
+                        tooltipTitle={tileTooltipTitle(hex.tile, hex.candidate)}
+                        tooltipSubtitle={tileTooltipSubtitle(
+                            hex.tile,
+                            hex.candidate,
+                        )}
+                        influenceRows={tileInfluenceRows(hex.tile)}
+                        auraOwner={tileAuraOwner(hex.tile)}
+                        auraEdges={auraEdgesForTile(hex.tile)}
+                        influencePreviewed={isStructurePreviewed(hex)}
+                        influencePreviewOwner={hoveredStructureOwner}
+                        onStructureHover={() => handleStructureHover(hex.tile)}
+                        onStructureLeave={clearStructureHover}
+                        on:select={() => handleHexSelect(hex)}
+                    />
                 {/each}
             </div>
         </div>
     </div>
 </section>
-
-<style>
-    .clip-hex {
-        clip-path: polygon(
-            50% 0%,
-            93.3% 25%,
-            93.3% 75%,
-            50% 100%,
-            6.7% 75%,
-            6.7% 25%
-        );
-    }
-</style>
