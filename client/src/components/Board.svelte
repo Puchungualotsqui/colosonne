@@ -91,6 +91,11 @@
         dimmed: boolean;
     };
 
+    type RenderHexView = RenderHex & {
+        targetStatus: HexTargetStatus;
+        renderKey: string;
+    };
+
     const HEX_W = 112;
     const HEX_H = 98;
     const STEP_X = 93;
@@ -122,37 +127,47 @@
     $: renderHexes = buildRenderHexes(game.Map, placementShell, canPlaceTile);
     $: boardSize = calculateBoardSize(renderHexes);
 
+    $: targetModeSignature = [
+        game.CurrentPhase,
+        game.CurrentPlayer,
+        playerId,
+        role,
+        selectedBuildAction ?? "none",
+        selectedHandIndex,
+        selectedHandItem?.Kind ?? "none",
+        selectedHandItem?.Biome ?? "none",
+        selectedHandItem?.Structure ?? "none",
+        selectedHandItem?.Action ?? "none",
+        canPlaceTile,
+        canUseDraft,
+        canBuild,
+    ].join("|");
+
+    $: renderHexViews = buildRenderHexViews(renderHexes, targetModeSignature);
+
     $: debugLog("board.targeting.state", {
         isMyTurn,
         currentPhase: game.CurrentPhase,
         selectedBuildAction,
         selectedHandIndex,
         selectedHandItem,
+        canPlaceTile,
+        canUseDraft,
+        canBuild,
     });
+
+    $: if (canBuild && selectedBuildAction) {
+        debugBuildTargetSummary();
+    }
 
     function key(x: number, y: number) {
         return tileKey(x, y);
     }
 
-    function isValidTargetForIntent(
-        intent: TargetIntent,
-        tile: Tile | undefined,
-    ) {
-        if (!tile) return false;
-
-        switch (intent.kind) {
-            case "draft":
-                return canUseDraftOnTile(game, playerId, intent.item, tile);
-
-            case "build":
-                return canBuildOnTile(game, playerId, intent.action, tile);
-
-            default:
-                return false;
-        }
-    }
-
     function getHexTargetStatus(hex: RenderHex): HexTargetStatus {
+        // Tile placement mode:
+        // Only empty candidate shells should become clickable.
+        // Existing tiles should NOT be dimmed, otherwise the whole board looks disabled.
         if (canPlaceTile) {
             return {
                 clickable: hex.candidate && !hex.tile && !hex.ghost,
@@ -160,7 +175,16 @@
             };
         }
 
-        if (canUseDraft && selectedHandItem && hex.tile) {
+        // Draft-card targeting mode:
+        // Only real existing tiles participate in dimming.
+        if (canUseDraft && selectedHandItem) {
+            if (!hex.tile || hex.ghost) {
+                return {
+                    clickable: false,
+                    dimmed: false,
+                };
+            }
+
             const valid = canUseDraftOnTile(
                 game,
                 playerId,
@@ -174,7 +198,16 @@
             };
         }
 
-        if (canBuild && selectedBuildAction && hex.tile) {
+        // Manual build targeting mode:
+        // Only real existing tiles participate in dimming.
+        if (canBuild && selectedBuildAction) {
+            if (!hex.tile || hex.ghost) {
+                return {
+                    clickable: false,
+                    dimmed: false,
+                };
+            }
+
             const valid = canBuildOnTile(
                 game,
                 playerId,
@@ -192,6 +225,72 @@
             clickable: false,
             dimmed: false,
         };
+    }
+
+    function buildRenderHexViews(
+        hexes: RenderHex[],
+        signature: string,
+    ): RenderHexView[] {
+        return hexes.map((hex) => {
+            const targetStatus = getHexTargetStatus(hex);
+
+            return {
+                ...hex,
+                targetStatus,
+                renderKey: [
+                    hex.key,
+                    signature,
+                    targetStatus.clickable ? "clickable" : "not-clickable",
+                    targetStatus.dimmed ? "dimmed" : "normal",
+                ].join("|"),
+            };
+        });
+    }
+
+    function debugBuildTargetSummary() {
+        if (!canBuild || !selectedBuildAction) return;
+
+        const rows = renderHexViews
+            .filter((hex) => hex.tile && !hex.ghost)
+            .map((hex) => {
+                const status = hex.targetStatus;
+                const tile = hex.tile!;
+
+                return {
+                    key: hex.key,
+                    x: tile.X,
+                    y: tile.Y,
+                    biome: tile.Biome,
+                    owner: tile.HasOwner ? tile.Owner : 0,
+                    hasOwner: tile.HasOwner,
+                    structure: tile.Structure,
+                    structureOwner: tile.StructureOwner,
+                    hasBlockade: tile.HasBlockade,
+                    blockadeOwner: tile.BlockadeOwner,
+                    clickable: status.clickable,
+                    dimmed: status.dimmed,
+                };
+            });
+
+        const valid = rows.filter((row) => row.clickable);
+        const shadowed = rows.filter((row) => row.dimmed);
+        const normal = rows.filter((row) => !row.clickable && !row.dimmed);
+
+        debugLog("board.build.targets.summary", {
+            action: selectedBuildAction,
+            playerId,
+            currentPlayer: game.CurrentPlayer,
+            phase: game.CurrentPhase,
+            isMyTurn,
+            canBuild,
+            totalTiles: rows.length,
+            validCount: valid.length,
+            shadowedCount: shadowed.length,
+            normalCount: normal.length,
+            valid,
+            shadowed,
+            normal,
+        });
     }
 
     function rawPosition(x: number, y: number) {
@@ -880,9 +979,7 @@
                 class="relative"
                 style={`width: ${boardSize.width}px; height: ${boardSize.height}px;`}
             >
-                {#each renderHexes as hex}
-                    {@const targetStatus = getHexTargetStatus(hex)}
-
+                {#each renderHexViews as hex (hex.renderKey)}
                     <BoardTile
                         left={hex.left}
                         top={hex.top}
@@ -891,8 +988,8 @@
                         tile={hex.tile}
                         candidate={hex.candidate}
                         ghost={hex.ghost}
-                        clickable={targetStatus.clickable}
-                        dimmed={targetStatus.dimmed}
+                        clickable={hex.targetStatus.clickable}
+                        dimmed={hex.targetStatus.dimmed}
                         biomeClass={biomeClass(hex.tile, hex.candidate)}
                         ownerClass={hex.tile ? ownerClass(hex.tile) : ""}
                         ownerLabel={hex.tile ? ownerLabel(hex.tile) : ""}

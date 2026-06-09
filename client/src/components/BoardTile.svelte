@@ -146,7 +146,7 @@
         "group board-tile clip-hex absolute box-border flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
         biomeClass,
         clickable
-            ? "cursor-pointer ring-4 ring-[#f2c36b] ring-offset-2 ring-offset-[#d9c291] hover:brightness-110"
+            ? "cursor-pointer ring-4 ring-[#f2c36b] ring-offset-2 ring-offset-[#d9c291] brightness-110 saturate-110 hover:brightness-125"
             : "cursor-default",
         candidate ? "border-dashed opacity-85" : "",
         ghost ? "pointer-events-none opacity-0" : "",
@@ -349,5 +349,9 @@
     .preview-p2::after {
         border-color: rgba(185, 75, 63, 0.95);
         filter: drop-shadow(0 0 7px rgba(185, 75, 63, 0.32));
+    }
+
+    .board-tile.tile-dimmed {
+        filter: grayscale(1) brightness(0.35) !important;
     }
 </style>
