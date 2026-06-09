@@ -207,25 +207,39 @@ func (gs *GameState) produceResources() {
 
 		switch tile.Structure {
 		case Settlement:
-			_ = gs.AddResource(tile.Owner, Wood, 1)
-			_ = gs.AddResource(tile.Owner, Stone, 1)
-			_ = gs.AddResource(tile.Owner, Grain, 1)
+			if err := gs.AddResource(tile.Owner, Wood, 1); err == nil {
+				gs.EmitResourceGainFromTile(tile.Owner, Wood, 1, tile.X, tile.Y, NoAction)
+			}
+
+			if err := gs.AddResource(tile.Owner, Stone, 1); err == nil {
+				gs.EmitResourceGainFromTile(tile.Owner, Stone, 1, tile.X, tile.Y, NoAction)
+			}
+
+			if err := gs.AddResource(tile.Owner, Grain, 1); err == nil {
+				gs.EmitResourceGainFromTile(tile.Owner, Grain, 1, tile.X, tile.Y, NoAction)
+			}
 
 			resource, err := tile.Biome.Resource()
 			if err == nil && resource != NoneResource {
-				_ = gs.AddResource(tile.Owner, resource, 1)
+				if err := gs.AddResource(tile.Owner, resource, 1); err == nil {
+					gs.EmitResourceGainFromTile(tile.Owner, resource, 1, tile.X, tile.Y, NoAction)
+				}
 			}
 
 		case Outpost:
 			resource, err := tile.Biome.Resource()
 			if err == nil && resource != NoneResource {
-				_ = gs.AddResource(tile.Owner, resource, 1)
+				if err := gs.AddResource(tile.Owner, resource, 1); err == nil {
+					gs.EmitResourceGainFromTile(tile.Owner, resource, 1, tile.X, tile.Y, NoAction)
+				}
 			}
 
 		case City:
 			resource, err := tile.Biome.Resource()
 			if err == nil && resource != NoneResource {
-				_ = gs.AddResource(tile.Owner, resource, 2)
+				if err := gs.AddResource(tile.Owner, resource, 2); err == nil {
+					gs.EmitResourceGainFromTile(tile.Owner, resource, 2, tile.X, tile.Y, NoAction)
+				}
 			}
 		}
 	}

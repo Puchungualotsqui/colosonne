@@ -32,6 +32,13 @@ func (gs *GameState) BuildOutpost(playerId PlayerId, x, y int) error {
 	tile.Structure = Outpost
 	tile.StructureOwner = playerId
 
+	gs.emitEvent(GameEvent{
+		Kind:      EventStructurePlaced,
+		Actor:     playerId,
+		To:        eventCoord(x, y),
+		Structure: Outpost,
+	})
+
 	gs.PhaseCompleted()
 
 	return nil
@@ -71,6 +78,13 @@ func (gs *GameState) BuildSettlement(playerId PlayerId, x, y int) error {
 	tile.Structure = Settlement
 	tile.StructureOwner = playerId
 
+	gs.emitEvent(GameEvent{
+		Kind:      EventStructurePlaced,
+		Actor:     playerId,
+		To:        eventCoord(x, y),
+		Structure: Settlement,
+	})
+
 	gs.PhaseCompleted()
 
 	return nil
@@ -101,6 +115,13 @@ func (gs *GameState) UpgradeCity(playerId PlayerId, x, y int) error {
 
 	tile.Structure = City
 	tile.StructureOwner = playerId
+
+	gs.emitEvent(GameEvent{
+		Kind:      EventStructureUpgraded,
+		Actor:     playerId,
+		To:        eventCoord(x, y),
+		Structure: City,
+	})
 
 	gs.PhaseCompleted()
 
@@ -141,6 +162,12 @@ func (gs *GameState) BuildBlockade(playerId PlayerId, x, y int) error {
 	tile.HasBlockade = true
 	tile.BlockadeOwner = playerId
 
+	gs.emitEvent(GameEvent{
+		Kind:  EventBlockadePlaced,
+		Actor: playerId,
+		To:    eventCoord(x, y),
+	})
+
 	gs.PhaseCompleted()
 
 	return nil
@@ -163,6 +190,12 @@ func (gs *GameState) BuyFloodworks(playerId PlayerId) error {
 
 	player.FloodworksBought++
 	player.FloodTokens += 3
+
+	gs.emitEvent(GameEvent{
+		Kind:   EventFloodworksBought,
+		Actor:  playerId,
+		Amount: 3,
+	})
 
 	gs.PhaseCompleted()
 

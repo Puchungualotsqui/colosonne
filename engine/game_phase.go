@@ -26,6 +26,9 @@ type GameState struct {
 	RoundFirstIndex int
 	TurnIndex       int
 	Round           uint
+
+	Events   []GameEvent `json:"-"`
+	eventSeq uint64      `json:"-"`
 }
 
 const CardsPerDraftTurn = 3

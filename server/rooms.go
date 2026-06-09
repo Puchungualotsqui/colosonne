@@ -391,6 +391,11 @@ func (r *Room) BroadcastState() {
 
 	buildCosts := buildCostsForGame(game)
 
+	events := []engine.GameEvent{}
+	if game != nil {
+		events = game.DrainEvents()
+	}
+
 	r.mu.Unlock()
 
 	currentPhase := any(nil)
@@ -398,6 +403,7 @@ func (r *Room) BroadcastState() {
 	round := any(nil)
 	mapTiles := 0
 	marketCards := 0
+	eventCount := len(events)
 
 	if game != nil {
 		currentPhase = game.CurrentPhase
@@ -408,7 +414,7 @@ func (r *Room) BroadcastState() {
 	}
 
 	log.Printf(
-		"[room:%s] broadcast state status=%s players=%d spectators=%d game=%v phase=%v currentPlayer=%v round=%v tiles=%d market=%d",
+		"[room:%s] broadcast state status=%s players=%d spectators=%d game=%v phase=%v currentPlayer=%v round=%v tiles=%d market=%d events=%d",
 		roomID,
 		status,
 		len(players),
@@ -419,6 +425,7 @@ func (r *Room) BroadcastState() {
 		round,
 		mapTiles,
 		marketCards,
+		eventCount,
 	)
 
 	r.Broadcast(ServerMessage{
@@ -431,6 +438,7 @@ func (r *Room) BroadcastState() {
 			"spectators": spectators,
 			"game":       game,
 			"buildCosts": buildCosts,
+			"events":     events,
 		},
 	})
 }

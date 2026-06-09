@@ -53,14 +53,14 @@
 
     function boxedOwnerClass(value: typeof owner) {
         if (value === 1 || value === "blue") {
-            return "bg-[#1d4e89] text-white ring-[#f8efe0]/35";
+            return "bg-[#2f6faf] text-white ring-[#f8efe0]/45";
         }
 
         if (value === 2 || value === "red") {
-            return "bg-[#b94b3f] text-white ring-[#f8efe0]/35";
+            return "bg-[#d45b4e] text-white ring-[#f8efe0]/45";
         }
 
-        return "bg-[#f8efe0]/70 text-[#142833] ring-black/10";
+        return "bg-[#f8efe0]/80 text-[#142833] ring-black/10";
     }
 </script>
 
@@ -84,8 +84,9 @@
             <div class="city-block city-block-b"></div>
             <div class="city-block city-block-c"></div>
         {:else if kind === "settlement"}
-            <div class="settlement-diamond"></div>
-            <div class="settlement-core"></div>
+            <div class="settlement-house settlement-house-a"></div>
+            <div class="settlement-house settlement-house-b"></div>
+            <div class="settlement-house settlement-house-c"></div>
         {:else if kind === "bridge"}
             <div class="bridge-deck"></div>
             <div class="bridge-arch bridge-arch-a"></div>
@@ -171,23 +172,42 @@
         height: 16px;
     }
 
-    .settlement-diamond {
-        left: 8px;
-        top: 8px;
-        width: 26px;
-        height: 26px;
+    .settlement-house {
         background: currentColor;
-        transform: rotate(45deg);
-        border-radius: 4px;
     }
 
-    .settlement-core {
-        left: 17px;
-        top: 17px;
-        width: 8px;
-        height: 8px;
-        background: rgba(20, 40, 51, 0.75);
-        transform: rotate(45deg);
+    .settlement-house::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: -8px;
+        width: 100%;
+        height: 10px;
+        background: currentColor;
+        clip-path: polygon(50% 0%, 100% 100%, 0% 100%);
+    }
+
+    .settlement-house-a {
+        left: 6px;
+        top: 21px;
+        width: 11px;
+        height: 12px;
+        border-radius: 2px;
+    }
+
+    .settlement-house-b {
+        left: 16px;
+        top: 15px;
+        width: 13px;
+        height: 18px;
+        border-radius: 2px;
+    }
+
+    .settlement-house-c {
+        left: 28px;
+        top: 22px;
+        width: 9px;
+        height: 11px;
         border-radius: 2px;
     }
 

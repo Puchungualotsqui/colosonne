@@ -110,6 +110,13 @@ func (gs *GameState) PlaceTileFromHand(playerId PlayerId, handIndex int, x, y in
 
 	gs.Map = append(gs.Map, tile)
 
+	gs.emitEvent(GameEvent{
+		Kind:  EventTilePlaced,
+		Actor: playerId,
+		To:    eventCoord(x, y),
+		Biome: item.Biome,
+	})
+
 	player.Hand = removeDraftItem(player.Hand, handIndex)
 
 	gs.PhaseCompleted()
@@ -293,6 +300,13 @@ func (gs *GameState) UseFloodToken(playerId PlayerId, x, y int) error {
 	tile.BlockadeOwner = 0
 
 	player.FloodTokens--
+
+	gs.emitEvent(GameEvent{
+		Kind:  EventFloodTile,
+		Actor: playerId,
+		To:    eventCoord(x, y),
+		Biome: River,
+	})
 
 	return nil
 }

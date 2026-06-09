@@ -16,7 +16,9 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 	gs := NewGameState(players, rng)
 
 	// Make the opening deterministic.
-	// 2 players * 3 cards each = 6 drafted cards before Place phase.
+	// The market starts with only tile cards, and the deck is also forced
+	// to tile cards so the second player's refilled market does not receive
+	// action or structure cards during this phase-flow test.
 	gs.Market = marketSlots(
 		DraftItem{Kind: DraftTile, Biome: Forest},
 		DraftItem{Kind: DraftTile, Biome: Mountain},
@@ -25,6 +27,18 @@ func TestFirstRoundPhaseFlowDoesNotStopOnRecount(t *testing.T) {
 		DraftItem{Kind: DraftTile, Biome: Mountain},
 		DraftItem{Kind: DraftTile, Biome: Plain},
 	)
+
+	gs.Deck = []DraftItem{
+		{Kind: DraftTile, Biome: Forest},
+		{Kind: DraftTile, Biome: Mountain},
+		{Kind: DraftTile, Biome: Plain},
+		{Kind: DraftTile, Biome: Forest},
+		{Kind: DraftTile, Biome: Mountain},
+		{Kind: DraftTile, Biome: Plain},
+		{Kind: DraftTile, Biome: Forest},
+		{Kind: DraftTile, Biome: Mountain},
+		{Kind: DraftTile, Biome: Plain},
+	}
 
 	if gs.CurrentPhase != PhasePick {
 		t.Fatalf("expected PhasePick, got %v", gs.CurrentPhase)

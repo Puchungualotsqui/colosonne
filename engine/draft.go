@@ -137,7 +137,13 @@ func (gs *GameState) actionHarvest(playerId PlayerId, x, y int) error {
 		return errors.New("this biome produces no resource")
 	}
 
-	return gs.AddResource(playerId, resource, 2)
+	if err := gs.AddResource(playerId, resource, 2); err != nil {
+		return err
+	}
+
+	gs.EmitResourceGainFromTile(playerId, resource, 2, x, y, Harvest)
+
+	return nil
 }
 
 func (gs *GameState) actionReinforce(playerId PlayerId, x, y int) error {
@@ -156,6 +162,14 @@ func (gs *GameState) actionReinforce(playerId PlayerId, x, y int) error {
 
 	tile.TempInfluence[playerId] += 2
 
+	gs.emitEvent(GameEvent{
+		Kind:   EventInfluenceAdded,
+		Actor:  playerId,
+		To:     eventCoord(x, y),
+		Amount: 2,
+		Action: Reinforce,
+	})
+
 	return nil
 }
 
@@ -164,7 +178,15 @@ func (gs *GameState) actionExpansion(playerId PlayerId) error {
 		return err
 	}
 
-	return gs.AddResource(playerId, Grain, 1)
+	gs.EmitResourceGainFromAction(playerId, Wood, 1, Expansion)
+
+	if err := gs.AddResource(playerId, Grain, 1); err != nil {
+		return err
+	}
+
+	gs.EmitResourceGainFromAction(playerId, Grain, 1, Expansion)
+
+	return nil
 }
 
 func (gs *GameState) actionRaid(playerId PlayerId, targetPlayerId PlayerId, rng *rand.Rand) error {
@@ -206,12 +228,10 @@ func (gs *GameState) actionRaid(playerId PlayerId, targetPlayerId PlayerId, rng 
 		pool[i], pool[j] = pool[j], pool[i]
 	})
 
-	steals := 3
-	if len(pool) < steals {
-		steals = len(pool)
-	}
+	steals := min(3, len(pool))
 
-	for i := 0; i < steals; i++ {
+	stolen := make(map[Resource]uint)
+	for i := range steals {
 		resource := pool[i]
 
 		if target.Resources[resource] == 0 {
@@ -220,6 +240,11 @@ func (gs *GameState) actionRaid(playerId PlayerId, targetPlayerId PlayerId, rng 
 
 		target.Resources[resource]--
 		raider.Resources[resource]++
+		stolen[resource]++
+	}
+
+	for resource, amount := range stolen {
+		gs.EmitResourceTransfer(targetPlayerId, playerId, resource, amount, Raid)
 	}
 
 	return nil
@@ -244,6 +269,13 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 		tile.Structure = Bridge
 		tile.StructureOwner = playerId
 
+		gs.emitEvent(GameEvent{
+			Kind:      EventStructurePlaced,
+			Actor:     playerId,
+			To:        eventCoord(x, y),
+			Structure: Bridge,
+		})
+
 		return nil
 
 	case Watchtower:
@@ -257,6 +289,13 @@ func (gs *GameState) useDraftStructure(playerId PlayerId, structure Structure, x
 
 		tile.Structure = Watchtower
 		tile.StructureOwner = playerId
+
+		gs.emitEvent(GameEvent{
+			Kind:      EventStructurePlaced,
+			Actor:     playerId,
+			To:        eventCoord(x, y),
+			Structure: Watchtower,
+		})
 
 		return nil
 
