@@ -149,9 +149,23 @@
     onDestroy(() => {
         onStructureLeave();
     });
+
+    let rootEl: HTMLDivElement;
+
+    export function getCenterViewport() {
+        if (!rootEl) return null;
+
+        const rect = rootEl.getBoundingClientRect();
+
+        return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+        };
+    }
 </script>
 
 <div
+    bind:this={rootEl}
     class={[
         "group board-tile clip-hex absolute box-border flex items-center justify-center border-[2px] shadow-[0_7px_0_rgba(74,48,31,0.22)] transition",
         biomeClass,

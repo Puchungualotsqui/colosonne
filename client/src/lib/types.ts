@@ -169,9 +169,10 @@ export type RoomState = {
   spectators: RoomSpectator[];
   game: GameState | null;
 
-  // Sent by backend in room_state.
-  // Keys are player ids as JSON object keys: "1", "2", etc.
   buildCosts?: BuildCostsByPlayer;
+
+  // Transient backend events used for animation.
+  events?: GameEvent[];
 };
 
 export type ServerMessage =
@@ -198,3 +199,40 @@ export type ServerMessage =
     }
   | { type: "kicked"; data: string }
   | { type: "error"; data: string };
+
+export type EventCoord = {
+  x: number;
+  y: number;
+};
+
+export type GameEventKind =
+  | "tile_placed"
+  | "structure_placed"
+  | "structure_upgraded"
+  | "blockade_placed"
+  | "flood_tile"
+  | "resource_gain"
+  | "resource_transfer"
+  | "influence_added"
+  | "action_used"
+  | "floodworks_bought";
+
+export type GameEvent = {
+  id: number;
+  kind: GameEventKind;
+
+  actor?: number;
+
+  fromPlayer?: number;
+  toPlayer?: number;
+
+  from?: EventCoord;
+  to?: EventCoord;
+
+  resource?: Resource;
+  amount?: number;
+
+  biome?: Biome;
+  structure?: Structure;
+  action?: Action;
+};

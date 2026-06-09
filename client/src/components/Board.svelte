@@ -653,6 +653,21 @@
         return `${biomeLabel(tile.Biome)} · ${owner} · ${structure}`;
     }
 
+    type Point = {
+        x: number;
+        y: number;
+    };
+
+    type BoardTileHandle = {
+        getCenterViewport: () => Point | null;
+    };
+
+    let tileRefs: Record<string, BoardTileHandle | undefined> = {};
+
+    export function getTileCenterViewport(x: number, y: number): Point | null {
+        return tileRefs[key(x, y)]?.getCenterViewport() ?? null;
+    }
+
     function handleHexSelect(hex: RenderHex) {
         const status = getHexTargetStatus(hex);
         const intent = getTargetIntent();
@@ -978,6 +993,7 @@
             >
                 {#each renderHexViews as hex (hex.renderKey)}
                     <BoardTile
+                        bind:this={tileRefs[hex.key]}
                         left={hex.left}
                         top={hex.top}
                         width={HEX_W}

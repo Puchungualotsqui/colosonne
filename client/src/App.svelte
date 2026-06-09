@@ -4,6 +4,7 @@
     import type {
         BuildAction,
         BuildCostsByPlayer,
+        GameEvent,
         GameState,
         RoomIdentity,
         RoomState,
@@ -27,6 +28,7 @@
     let roomState: RoomState | null = null;
     let game: GameState | null = null;
     let buildCosts: BuildCostsByPlayer = {};
+    let events: GameEvent[] = [];
 
     $: inRoom = roomId.length > 0;
     $: inLobby = inRoom && roomState?.status === "lobby";
@@ -144,12 +146,14 @@
                     round: msg.data.game?.Round,
                     players: msg.data.players,
                     buildCosts: msg.data.buildCosts,
+                    events: msg.data.events,
                 });
 
                 roomState = msg.data;
                 roomId = msg.data.roomId;
                 game = msg.data.game;
                 buildCosts = msg.data.buildCosts ?? {};
+                events = msg.data.events ?? [];
                 loading = false;
                 error = "";
                 break;
@@ -158,6 +162,7 @@
                 roomId = msg.data.roomId;
                 game = msg.data.game;
                 buildCosts = {};
+                events = [];
                 loading = false;
                 error = "";
                 break;
@@ -280,6 +285,7 @@
         {role}
         {error}
         {buildCosts}
+        {events}
         onPick={(marketIndex) => socket?.send("pick", { marketIndex })}
         onPlaceTile={(handIndex, x, y) =>
             socket?.send("place_tile", { handIndex, x, y })}

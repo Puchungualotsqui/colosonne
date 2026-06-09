@@ -1,5 +1,9 @@
 <script lang="ts">
     import ResourceIcon from "./ResourceIcon.svelte";
+    import { tick } from "svelte";
+    import ResourceFlightLayer, {
+        type ResourceFlight,
+    } from "./ResourceFlightLayer.svelte";
     import Board from "./Board.svelte";
     import Market from "./Market.svelte";
     import HandCard from "./HandCard.svelte";
@@ -15,10 +19,12 @@
         Action,
         DraftKind,
         GamePhase,
+        Resource,
         Structure,
         type BuildAction,
         type BuildCostsByPlayer,
         type DraftItem,
+        type GameEvent,
         type GameState,
         type Player,
         type ResourceCostResponse,
@@ -32,6 +38,7 @@
     export let role: "player" | "spectator" | "" = "";
     export let error = "";
     export let buildCosts: BuildCostsByPlayer = {};
+    export let events: GameEvent[] = [];
 
     export let onPick: (marketIndex: number) => void;
     export let onPlaceTile: (handIndex: number, x: number, y: number) => void;
@@ -65,6 +72,23 @@
 
     let previousResourcesByPlayer = new Map<number, string>();
     let gainedResourcesByPlayer = new Map<number, Map<number, number>>();
+
+    type Point = {
+        x: number;
+        y: number;
+    };
+
+    type BoardHandle = {
+        getTileCenterViewport: (x: number, y: number) => Point | null;
+    };
+
+    let boardRef: BoardHandle | null = null;
+    let resourceAnchorEls: Record<string, HTMLElement | undefined> = {};
+
+    let resourceFlights: ResourceFlight[] = [];
+    let processedEventIds = new Set<number>();
+    let flightSeq = 0;
+    let eventScheduleSeq = 0;
 
     $: me = game.Players.find((p) => p.Id === playerId);
     $: myHand = me?.Hand ?? [];
@@ -166,6 +190,166 @@
 
     $: hasMyResourceGain =
         myWoodGain > 0 || myStoneGain > 0 || myGrainGain > 0 || myRelicGain > 0;
+
+    $: if (events.length > 0) {
+        scheduleEventAnimations(events);
+    }
+
+    async function scheduleEventAnimations(nextEvents: GameEvent[]) {
+        const pending = nextEvents.filter(
+            (event) => !processedEventIds.has(event.id),
+        );
+
+        if (pending.length === 0) return;
+
+        for (const event of pending) {
+            processedEventIds.add(event.id);
+        }
+
+        const scheduleId = ++eventScheduleSeq;
+
+        await tick();
+
+        if (scheduleId !== eventScheduleSeq) {
+            // A newer event batch arrived. Still safe to animate pending events,
+            // because IDs are already de-duplicated.
+        }
+
+        for (const event of pending) {
+            enqueueEventAnimation(event);
+        }
+    }
+
+    function enqueueEventAnimation(event: GameEvent) {
+        switch (event.kind) {
+            case "resource_gain":
+                enqueueResourceGain(event);
+                return;
+
+            case "resource_transfer":
+                enqueueResourceTransfer(event);
+                return;
+
+            default:
+                return;
+        }
+    }
+
+    function enqueueResourceGain(event: GameEvent) {
+        if (!event.toPlayer || !event.resource || !event.amount) return;
+
+        const to = getResourceAnchorCenter(event.toPlayer, event.resource);
+        if (!to) return;
+
+        const from = event.from
+            ? boardRef?.getTileCenterViewport(event.from.x, event.from.y)
+            : actionSourcePoint(event.toPlayer, event.resource);
+
+        if (!from) return;
+
+        pushResourceFlight({
+            resource: event.resource,
+            amount: event.amount,
+            from,
+            to,
+            label: `+${event.amount}`,
+        });
+    }
+
+    function enqueueResourceTransfer(event: GameEvent) {
+        if (
+            !event.fromPlayer ||
+            !event.toPlayer ||
+            !event.resource ||
+            !event.amount
+        ) {
+            return;
+        }
+
+        const from =
+            getResourceAnchorCenter(event.fromPlayer, event.resource) ??
+            actionSourcePoint(event.fromPlayer, event.resource);
+
+        const to = getResourceAnchorCenter(event.toPlayer, event.resource);
+
+        if (!from || !to) return;
+
+        pushResourceFlight({
+            resource: event.resource,
+            amount: event.amount,
+            from,
+            to,
+            label: `+${event.amount}`,
+        });
+    }
+
+    function pushResourceFlight(input: {
+        resource: Resource;
+        amount: number;
+        from: Point;
+        to: Point;
+        label?: string;
+    }) {
+        const id = ++flightSeq;
+        const jitter = ((id % 5) - 2) * 7;
+
+        const flight: ResourceFlight = {
+            id,
+            resource: input.resource,
+            amount: input.amount,
+            fromX: input.from.x + jitter,
+            fromY: input.from.y,
+            toX: input.to.x + jitter * 0.25,
+            toY: input.to.y,
+            label: input.label,
+        };
+
+        resourceFlights = [...resourceFlights, flight];
+
+        window.setTimeout(() => {
+            resourceFlights = resourceFlights.filter((item) => item.id !== id);
+        }, 900);
+    }
+
+    function getResourceAnchorCenter(
+        targetPlayerId: number,
+        resource: Resource,
+    ): Point | null {
+        const key = resourceAnchorKey(targetPlayerId, resource);
+        const element = resourceAnchorEls[key];
+
+        if (!element) return null;
+
+        const rect = element.getBoundingClientRect();
+
+        return {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+        };
+    }
+
+    function actionSourcePoint(
+        targetPlayerId: number,
+        resource: Resource,
+    ): Point | null {
+        const target = getResourceAnchorCenter(targetPlayerId, resource);
+
+        if (target) {
+            return {
+                x: target.x,
+                y: target.y - 120,
+            };
+        }
+
+        return {
+            x: window.innerWidth / 2,
+            y: window.innerHeight / 2,
+        };
+    }
+
+    function resourceAnchorKey(targetPlayerId: number, resource: Resource) {
+        return `${targetPlayerId}:${resource}`;
+    }
 
     function phaseName(phase: GamePhase) {
         switch (phase) {
@@ -516,29 +700,89 @@
                             </div>
 
                             <div class="mt-3 flex flex-nowrap gap-1.5">
-                                <ResourceIcon
-                                    resource="wood"
-                                    amount={resourceAmount(player, 1)}
-                                    pulse={resourcePulse(player.Id, 1)}
-                                />
+                                <span
+                                    class="inline-flex"
+                                    bind:this={
+                                        resourceAnchorEls[
+                                            `${player.Id}:${RES_WOOD}`
+                                        ]
+                                    }
+                                >
+                                    <ResourceIcon
+                                        resource="wood"
+                                        amount={resourceAmount(
+                                            player,
+                                            RES_WOOD,
+                                        )}
+                                        pulse={resourcePulse(
+                                            player.Id,
+                                            RES_WOOD,
+                                        )}
+                                    />
+                                </span>
 
-                                <ResourceIcon
-                                    resource="stone"
-                                    amount={resourceAmount(player, 2)}
-                                    pulse={resourcePulse(player.Id, 2)}
-                                />
+                                <span
+                                    class="inline-flex"
+                                    bind:this={
+                                        resourceAnchorEls[
+                                            `${player.Id}:${RES_STONE}`
+                                        ]
+                                    }
+                                >
+                                    <ResourceIcon
+                                        resource="stone"
+                                        amount={resourceAmount(
+                                            player,
+                                            RES_STONE,
+                                        )}
+                                        pulse={resourcePulse(
+                                            player.Id,
+                                            RES_STONE,
+                                        )}
+                                    />
+                                </span>
 
-                                <ResourceIcon
-                                    resource="grain"
-                                    amount={resourceAmount(player, 3)}
-                                    pulse={resourcePulse(player.Id, 3)}
-                                />
+                                <span
+                                    class="inline-flex"
+                                    bind:this={
+                                        resourceAnchorEls[
+                                            `${player.Id}:${RES_GRAIN}`
+                                        ]
+                                    }
+                                >
+                                    <ResourceIcon
+                                        resource="grain"
+                                        amount={resourceAmount(
+                                            player,
+                                            RES_GRAIN,
+                                        )}
+                                        pulse={resourcePulse(
+                                            player.Id,
+                                            RES_GRAIN,
+                                        )}
+                                    />
+                                </span>
 
-                                <ResourceIcon
-                                    resource="relic"
-                                    amount={resourceAmount(player, 4)}
-                                    pulse={resourcePulse(player.Id, 4)}
-                                />
+                                <span
+                                    class="inline-flex"
+                                    bind:this={
+                                        resourceAnchorEls[
+                                            `${player.Id}:${RES_RELIC}`
+                                        ]
+                                    }
+                                >
+                                    <ResourceIcon
+                                        resource="relic"
+                                        amount={resourceAmount(
+                                            player,
+                                            RES_RELIC,
+                                        )}
+                                        pulse={resourcePulse(
+                                            player.Id,
+                                            RES_RELIC,
+                                        )}
+                                    />
+                                </span>
 
                                 {#if player.FloodTokens && player.FloodTokens > 0}
                                     <div
@@ -557,6 +801,7 @@
 
         <div class="min-h-0 min-w-0 lg:sticky lg:top-24 lg:self-start">
             <Board
+                bind:this={boardRef}
                 {game}
                 {playerId}
                 {role}
@@ -891,6 +1136,7 @@
             <Market {game} {playerId} {role} {onPick} />
         </aside>
     </section>
+    <ResourceFlightLayer flights={resourceFlights} />
 </AppShell>
 
 <style>
