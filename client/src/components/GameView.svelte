@@ -632,7 +632,7 @@
                     Match
                 </div>
 
-                <div class="mt-4 grid grid-cols-2 gap-2">
+                <div class="mt-4 grid grid-cols-3 gap-2">
                     <div
                         class="rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
                     >
@@ -678,7 +678,7 @@
                     </div>
 
                     <div
-                        class="col-span-2 rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
+                        class="col-span-3 rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
                         title="Tile cards still left to be placed from deck, market, and hands"
                     >
                         <div
