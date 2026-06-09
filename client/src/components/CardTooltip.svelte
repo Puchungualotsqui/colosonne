@@ -37,7 +37,11 @@
     function showFromFocus(event: FocusEvent) {
         if (!item) return;
 
-        const target = event.currentTarget as HTMLElement;
+        if (visible) return;
+
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
+
         const rect = target.getBoundingClientRect();
 
         visible = true;
