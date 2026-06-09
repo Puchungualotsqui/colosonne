@@ -17,8 +17,6 @@
     export let dimmed = false;
 
     export let biomeClass = "";
-    export let ownerClass = "";
-    export let ownerLabel = "";
     export let structureLabel = "";
     export let structureIcon = "";
     export let tooltip = "";
@@ -106,6 +104,18 @@
     function hide() {
         tooltipVisible = false;
         onStructureLeave();
+    }
+
+    function structureOwnerClass(owner: number) {
+        if (owner === 1) {
+            return "bg-[#1d4e89] text-white ring-[#f8efe0]/35";
+        }
+
+        if (owner === 2) {
+            return "bg-[#b94b3f] text-white ring-[#f8efe0]/35";
+        }
+
+        return "bg-[#f8efe0]/70 text-[#142833] ring-black/10";
     }
 
     function portal(node: HTMLElement) {
@@ -200,8 +210,11 @@
     {:else if tile}
         {#if tile.Structure !== Structure.None}
             <div
-                class="relative z-20 grid h-12 w-12 place-items-center rounded-2xl bg-[#f8efe0]/70 text-2xl font-black text-[#142833] shadow-sm"
-                title={structureLabel}
+                class={[
+                    "relative z-20 grid h-12 w-12 place-items-center rounded-2xl text-2xl font-black shadow-sm ring-2",
+                    structureOwnerClass(tile.StructureOwner),
+                ].join(" ")}
+                title={`${structureLabel} · P${tile.StructureOwner}`}
             >
                 {structureIcon}
             </div>
@@ -220,17 +233,6 @@
                 title={`Blockade P${tile.BlockadeOwner}`}
             >
                 ✕
-            </div>
-        {/if}
-
-        {#if tile.HasOwner}
-            <div
-                class={[
-                    "absolute bottom-2 left-1/2 z-20 h-5 min-w-8 -translate-x-1/2 rounded-full px-2 text-[10px] font-black leading-5 shadow-sm",
-                    ownerClass,
-                ].join(" ")}
-            >
-                {ownerLabel}
             </div>
         {/if}
     {/if}

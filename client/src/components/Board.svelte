@@ -3,8 +3,6 @@
     import {
         biomeClass,
         biomeLabel,
-        ownerClass,
-        ownerLabel,
         structureIcon,
         structureLabel,
     } from "../lib/boardPresentation";
@@ -991,8 +989,6 @@
                         clickable={hex.targetStatus.clickable}
                         dimmed={hex.targetStatus.dimmed}
                         biomeClass={biomeClass(hex.tile, hex.candidate)}
-                        ownerClass={hex.tile ? ownerClass(hex.tile) : ""}
-                        ownerLabel={hex.tile ? ownerLabel(hex.tile) : ""}
                         structureLabel={hex.tile
                             ? structureLabel(hex.tile.Structure)
                             : ""}

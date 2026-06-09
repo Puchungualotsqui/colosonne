@@ -71,22 +71,3 @@ export function structureIcon(structure: Structure) {
       return "";
   }
 }
-
-export function ownerClass(tile: Tile) {
-  if (!tile.HasOwner) return "bg-[#f8efe0]/80 text-[#5c4934]";
-
-  if (tile.Owner === 1) {
-    return "bg-[#1d4e89] text-white";
-  }
-
-  if (tile.Owner === 2) {
-    return "bg-[#b94b3f] text-white";
-  }
-
-  return "bg-[#f8efe0]/80 text-[#5c4934]";
-}
-
-export function ownerLabel(tile: Tile) {
-  if (!tile.HasOwner) return "Open";
-  return `P${tile.Owner}`;
-}
