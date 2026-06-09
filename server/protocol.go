@@ -6,6 +6,8 @@ import (
 	"webGameGo/engine"
 )
 
+type ScoresByPlayerResponse map[engine.PlayerId]uint
+
 type ClientMessage struct {
 	Type string          `json:"type"`
 	Data json.RawMessage `json:"data"`

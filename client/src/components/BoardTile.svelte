@@ -6,6 +6,9 @@
         type InfluenceTooltipRow,
     } from "./TileTooltip.svelte";
 
+    export let onTileHover: () => void = () => {};
+    export let onTileLeave: () => void = () => {};
+
     export let left = 0;
     export let top = 0;
     export let width = 112;
@@ -86,6 +89,8 @@
     }
 
     function showFromMouse(event: MouseEvent) {
+        onTileHover();
+
         if (!tooltip && influenceRows.length === 0) return;
 
         tooltipVisible = true;
@@ -104,6 +109,7 @@
     function hide() {
         tooltipVisible = false;
         onStructureLeave();
+        onTileLeave();
     }
 
     function structureOwnerClass(owner: number) {
@@ -297,7 +303,8 @@
     }
 
     .board-tile.tile-dimmed {
-        filter: saturate(0.5) brightness(0.72);
+        filter: saturate(0.88) brightness(0.96);
+        opacity: 0.82;
     }
 
     .board-tile.tile-dimmed::before {
@@ -307,13 +314,16 @@
         z-index: 9;
         pointer-events: none;
         background:
-            linear-gradient(rgba(20, 40, 51, 0.5), rgba(20, 40, 51, 0.5)),
+            linear-gradient(
+                rgba(248, 239, 224, 0.12),
+                rgba(248, 239, 224, 0.12)
+            ),
             repeating-linear-gradient(
                 -35deg,
-                rgba(248, 239, 224, 0.12) 0px,
-                rgba(248, 239, 224, 0.12) 4px,
-                transparent 4px,
-                transparent 9px
+                rgba(20, 40, 51, 0.07) 0px,
+                rgba(20, 40, 51, 0.07) 2px,
+                transparent 2px,
+                transparent 10px
             );
     }
 
@@ -345,7 +355,7 @@
     .structure-preview::after {
         content: "";
         position: absolute;
-        inset: 8px;
+        inset: 7px;
         z-index: 3;
         clip-path: polygon(
             50% 0%,
@@ -356,22 +366,20 @@
             6.7% 25%
         );
         pointer-events: none;
-        background: transparent;
-        border: 4px solid rgba(248, 239, 224, 0.9);
-        filter: drop-shadow(0 0 6px rgba(248, 239, 224, 0.28));
+        background: rgba(248, 239, 224, 0.22);
+        border: 4px solid rgba(248, 239, 224, 0.92);
+        filter: drop-shadow(0 0 8px rgba(248, 239, 224, 0.32));
     }
 
     .preview-p1::after {
+        background: rgba(29, 78, 137, 0.2);
         border-color: rgba(29, 78, 137, 0.95);
         filter: drop-shadow(0 0 7px rgba(29, 78, 137, 0.32));
     }
 
     .preview-p2::after {
+        background: rgba(185, 75, 63, 0.2);
         border-color: rgba(185, 75, 63, 0.95);
         filter: drop-shadow(0 0 7px rgba(185, 75, 63, 0.32));
-    }
-
-    .board-tile.tile-dimmed {
-        filter: grayscale(1) brightness(0.35) !important;
     }
 </style>

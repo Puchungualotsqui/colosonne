@@ -93,12 +93,9 @@ func (gs *GameState) applyStructureInfluence() {
 			}
 
 		case Bridge:
-			// Bridge makes a river tile controllable/crossable.
-			gs.addInfluence(tile.X, tile.Y, owner, 1)
-
-			for _, n := range HexNeighbors(tile.X, tile.Y) {
-				gs.addInfluence(n[0], n[1], owner, 1)
-			}
+			// Bridge makes a river tile able to receive influence,
+			// but the Bridge itself does not create influence.
+			continue
 		}
 	}
 }

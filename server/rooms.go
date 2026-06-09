@@ -391,6 +391,8 @@ func (r *Room) BroadcastState() {
 
 	buildCosts := buildCostsForGame(game)
 
+	scores := scoresForGame(game)
+
 	events := []engine.GameEvent{}
 	if game != nil {
 		events = game.DrainEvents()
@@ -438,6 +440,7 @@ func (r *Room) BroadcastState() {
 			"spectators": spectators,
 			"game":       game,
 			"buildCosts": buildCosts,
+			"scores":     scores,
 			"events":     events,
 		},
 	})
@@ -576,6 +579,20 @@ func buildCostsForGame(game *engine.GameState) map[engine.PlayerId]BuildCostsRes
 			Blockade:   resourceCostResponse(game.BlockadeCost()),
 			Floodworks: resourceCostResponse(game.FloodworksCost(player.Id)),
 		}
+	}
+
+	return out
+}
+
+func scoresForGame(game *engine.GameState) map[engine.PlayerId]uint {
+	out := make(map[engine.PlayerId]uint)
+
+	if game == nil {
+		return out
+	}
+
+	for _, player := range game.Players {
+		out[player.Id] = game.VictoryPoints(player.Id)
 	}
 
 	return out

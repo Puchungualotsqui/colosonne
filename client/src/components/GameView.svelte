@@ -1,6 +1,7 @@
 <script lang="ts">
-    import ResourceIcon from "./ResourceIcon.svelte";
     import { tick } from "svelte";
+
+    import ResourceIcon from "./ResourceIcon.svelte";
     import ResourceFlightLayer, {
         type ResourceFlight,
     } from "./ResourceFlightLayer.svelte";
@@ -10,11 +11,15 @@
     import MiniHandCard from "./MiniHandCard.svelte";
     import CardTooltip from "./CardTooltip.svelte";
     import BuildButton from "./BuildButton.svelte";
-    import { canUseHandItem, hasBuildTarget } from "../lib/rules";
+
     import AppShell from "./ui/AppShell.svelte";
     import AppHeader from "./ui/AppHeader.svelte";
     import Panel from "./ui/Panel.svelte";
+
+    import { canUseHandItem, hasBuildTarget } from "../lib/rules";
     import { ui } from "../lib/uiClasses";
+    import { debugLog } from "../lib/debug";
+
     import {
         Action,
         DraftKind,
@@ -28,9 +33,9 @@
         type GameState,
         type Player,
         type ResourceCostResponse,
+        type ScoresByPlayer,
         type TargetBuildAction,
     } from "../lib/types";
-    import { debugLog } from "../lib/debug";
 
     export let game: GameState;
     export let roomId = "";
@@ -38,6 +43,7 @@
     export let role: "player" | "spectator" | "" = "";
     export let error = "";
     export let buildCosts: BuildCostsByPlayer = {};
+    export let scores: ScoresByPlayer = {};
     export let events: GameEvent[] = [];
 
     export let onPick: (marketIndex: number) => void;
@@ -195,6 +201,30 @@
         scheduleEventAnimations(events);
     }
 
+    $: marketCardsRemaining = game.Market.filter(
+        (item) => item !== null,
+    ).length;
+
+    $: handCardsRemaining = game.Players.reduce(
+        (total, player) => total + (player.Hand?.length ?? 0),
+        0,
+    );
+
+    $: tileCardsRemaining =
+        game.Deck.filter((item) => item.Kind === DraftKind.Tile).length +
+        game.Market.filter((item) => item?.Kind === DraftKind.Tile).length +
+        game.Players.reduce(
+            (total, player) =>
+                total +
+                (player.Hand?.filter((item) => item.Kind === DraftKind.Tile)
+                    .length ?? 0),
+            0,
+        );
+
+    function scoreForPlayer(targetPlayerId: number) {
+        return scores[String(targetPlayerId)] ?? 0;
+    }
+
     async function scheduleEventAnimations(nextEvents: GameEvent[]) {
         const pending = nextEvents.filter(
             (event) => !processedEventIds.has(event.id),
@@ -308,7 +338,7 @@
 
         window.setTimeout(() => {
             resourceFlights = resourceFlights.filter((item) => item.id !== id);
-        }, 900);
+        }, 1700);
     }
 
     function getResourceAnchorCenter(
@@ -602,7 +632,7 @@
                     Match
                 </div>
 
-                <div class="mt-4 grid grid-cols-3 gap-2">
+                <div class="mt-4 grid grid-cols-2 gap-2">
                     <div
                         class="rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
                     >
@@ -646,6 +676,25 @@
                             {currentPlayerName}
                         </div>
                     </div>
+
+                    <div
+                        class="col-span-2 rounded-2xl bg-[#f8efe0]/10 p-3 text-center ring-1 ring-[#f8efe0]/10"
+                        title="Tile cards still left to be placed from deck, market, and hands"
+                    >
+                        <div
+                            class="text-[10px] font-black uppercase tracking-wider text-[#9fc9c5]"
+                        >
+                            Tiles left to place
+                        </div>
+                        <div class="mt-1 text-3xl font-black text-[#fff7e8]">
+                            {tileCardsRemaining}
+                        </div>
+                        <div
+                            class="mt-1 text-[11px] font-semibold text-[#9fc9c5]"
+                        >
+                            Deck + market + hands
+                        </div>
+                    </div>
                 </div>
             </Panel>
 
@@ -672,11 +721,22 @@
                                     P{player.Id}
                                 </div>
 
-                                <div>
-                                    <div class="font-black text-[#fff7e8]">
-                                        {player.Id === playerId
-                                            ? "You"
-                                            : `Player ${player.Id}`}
+                                <div class="min-w-0">
+                                    <div
+                                        class="flex flex-wrap items-center gap-2"
+                                    >
+                                        <div class="font-black text-[#fff7e8]">
+                                            {player.Id === playerId
+                                                ? "You"
+                                                : `Player ${player.Id}`}
+                                        </div>
+
+                                        <div
+                                            class="rounded-lg bg-[#f2c36b] px-2 py-0.5 text-[10px] font-black text-[#142833]"
+                                            title="Current victory points"
+                                        >
+                                            {scoreForPlayer(player.Id)} VP
+                                        </div>
                                     </div>
 
                                     <div

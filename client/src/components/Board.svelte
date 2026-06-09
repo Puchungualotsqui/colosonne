@@ -760,12 +760,28 @@
         return { kind: "none" };
     }
 
-    let hoveredStructureKey = "";
-    let hoveredStructureInfluence = new Set<string>();
-    let hoveredStructureOwner = 0;
+    let hoveredPreviewKey = "";
+    let hoveredInfluencePreview = new Set<string>();
+    let hoveredInfluencePreviewOwner = 0;
 
     function tileAt(x: number, y: number) {
         return game.Map.find((tile) => tile.X === x && tile.Y === y);
+    }
+
+    function buildActionStructure(action: TargetBuildAction): Structure {
+        switch (action) {
+            case "outpost":
+                return Structure.Outpost;
+
+            case "settlement":
+                return Structure.Settlement;
+
+            case "city":
+                return Structure.City;
+
+            default:
+                return Structure.None;
+        }
     }
 
     function hexRingRadius2(x: number, y: number): Coord[] {
@@ -813,47 +829,47 @@
         return false;
     }
 
-    function structureInfluenceCoords(tile: Tile | undefined) {
-        if (!tile) return [];
-
+    function structureInfluenceCoords(
+        structure: Structure,
+        x: number,
+        y: number,
+    ): Coord[] {
         const coords: Coord[] = [];
 
-        function addCoord(x: number, y: number) {
-            const target = tileAt(x, y);
+        function addCoord(targetX: number, targetY: number) {
+            const target = tileAt(targetX, targetY);
             if (!canReceiveInfluence(target)) return;
 
-            coords.push({ x, y });
+            coords.push({ x: targetX, y: targetY });
         }
 
-        switch (tile.Structure) {
+        switch (structure) {
             case Structure.Settlement:
-                addCoord(tile.X, tile.Y);
+                addCoord(x, y);
                 break;
 
             case Structure.Outpost:
-                addCoord(tile.X, tile.Y);
+                addCoord(x, y);
 
-                for (const n of hexNeighbors(tile.X, tile.Y)) {
+                for (const n of hexNeighbors(x, y)) {
                     addCoord(n.x, n.y);
                 }
 
                 break;
 
             case Structure.City:
-                addCoord(tile.X, tile.Y);
+                addCoord(x, y);
                 break;
 
             case Structure.Watchtower:
-                addCoord(tile.X, tile.Y);
+                addCoord(x, y);
 
-                for (const n of hexNeighbors(tile.X, tile.Y)) {
+                for (const n of hexNeighbors(x, y)) {
                     addCoord(n.x, n.y);
                 }
 
-                for (const n of hexRingRadius2(tile.X, tile.Y)) {
-                    if (
-                        canInfluenceDistance2Preview(tile.X, tile.Y, n.x, n.y)
-                    ) {
+                for (const n of hexRingRadius2(x, y)) {
+                    if (canInfluenceDistance2Preview(x, y, n.x, n.y)) {
                         addCoord(n.x, n.y);
                     }
                 }
@@ -861,47 +877,104 @@
                 break;
 
             case Structure.Bridge:
-                addCoord(tile.X, tile.Y);
-
-                for (const n of hexNeighbors(tile.X, tile.Y)) {
-                    addCoord(n.x, n.y);
-                }
-
+                // Bridge does not project influence.
                 break;
         }
 
         return coords;
     }
 
-    function handleStructureHover(tile: Tile | undefined) {
-        if (!tile || tile.Structure === Structure.None) {
-            hoveredStructureKey = "";
-            hoveredStructureInfluence = new Set();
-            hoveredStructureOwner = 0;
-            return;
-        }
-
-        hoveredStructureKey = key(tile.X, tile.Y);
-        hoveredStructureOwner = tile.StructureOwner;
-
-        hoveredStructureInfluence = new Set(
-            structureInfluenceCoords(tile).map((coord) =>
-                key(coord.x, coord.y),
-            ),
+    function setInfluencePreview(
+        previewKey: string,
+        owner: number,
+        coords: Coord[],
+    ) {
+        hoveredPreviewKey = previewKey;
+        hoveredInfluencePreviewOwner = owner;
+        hoveredInfluencePreview = new Set(
+            coords.map((coord) => key(coord.x, coord.y)),
         );
     }
 
-    function clearStructureHover() {
-        hoveredStructureKey = "";
-        hoveredStructureInfluence = new Set();
-        hoveredStructureOwner = 0;
+    function handleStructureHover(tile: Tile | undefined) {
+        if (!tile || tile.Structure === Structure.None) {
+            clearInfluencePreview();
+            return;
+        }
+
+        setInfluencePreview(
+            key(tile.X, tile.Y),
+            tile.StructureOwner,
+            structureInfluenceCoords(tile.Structure, tile.X, tile.Y),
+        );
     }
 
-    function isStructurePreviewed(hex: RenderHex) {
-        if (!hex.tile) return false;
-        if (!hoveredStructureKey) return false;
+    function handleTileHover(hex: RenderHexView) {
+        if (!hex.tile || hex.ghost) {
+            clearInfluencePreview();
+            return;
+        }
 
-        return hoveredStructureInfluence.has(key(hex.tile.X, hex.tile.Y));
+        if (canBuild && selectedBuildAction) {
+            if (
+                !canBuildOnTile(game, playerId, selectedBuildAction, hex.tile)
+            ) {
+                clearInfluencePreview();
+                return;
+            }
+
+            const structure = buildActionStructure(selectedBuildAction);
+            if (structure === Structure.None) {
+                clearInfluencePreview();
+                return;
+            }
+
+            setInfluencePreview(
+                `${selectedBuildAction}:${hex.key}`,
+                playerId,
+                structureInfluenceCoords(structure, hex.tile.X, hex.tile.Y),
+            );
+
+            return;
+        }
+
+        if (
+            canUseDraft &&
+            selectedHandItem?.Kind === DraftKind.Structure &&
+            canUseDraftOnTile(game, playerId, selectedHandItem, hex.tile)
+        ) {
+            setInfluencePreview(
+                `draft:${selectedHandItem.Structure}:${hex.key}`,
+                playerId,
+                structureInfluenceCoords(
+                    selectedHandItem.Structure,
+                    hex.tile.X,
+                    hex.tile.Y,
+                ),
+            );
+
+            return;
+        }
+
+        if (hex.tile.Structure !== Structure.None) {
+            handleStructureHover(hex.tile);
+            return;
+        }
+
+        clearInfluencePreview();
+    }
+
+    function clearInfluencePreview() {
+        hoveredPreviewKey = "";
+        hoveredInfluencePreview = new Set();
+        hoveredInfluencePreviewOwner = 0;
+    }
+
+    function isInfluencePreviewed(hex: RenderHex) {
+        if (!hex.tile) return false;
+        if (!hoveredPreviewKey) return false;
+
+        return hoveredInfluencePreview.has(key(hex.tile.X, hex.tile.Y));
     }
 
     function tileInfluenceRows(tile: Tile | undefined): InfluenceTooltipRow[] {
@@ -1016,10 +1089,12 @@
                         influenceRows={tileInfluenceRows(hex.tile)}
                         auraOwner={tileAuraOwner(hex.tile)}
                         auraEdges={auraEdgesForTile(hex.tile)}
-                        influencePreviewed={isStructurePreviewed(hex)}
-                        influencePreviewOwner={hoveredStructureOwner}
+                        influencePreviewed={isInfluencePreviewed(hex)}
+                        influencePreviewOwner={hoveredInfluencePreviewOwner}
+                        onTileHover={() => handleTileHover(hex)}
+                        onTileLeave={clearInfluencePreview}
                         onStructureHover={() => handleStructureHover(hex.tile)}
-                        onStructureLeave={clearStructureHover}
+                        onStructureLeave={clearInfluencePreview}
                         on:select={() => handleHexSelect(hex)}
                     />
                 {/each}

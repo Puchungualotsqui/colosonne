@@ -81,11 +81,7 @@ func (gs *GameState) canUseStructureOnTile(playerId PlayerId, structure Structur
 
 	switch structure {
 	case Bridge:
-		if tile.Biome != River {
-			return false
-		}
-
-		return gs.hasAdjacentControlledTile(playerId, tile.X, tile.Y)
+		return tile.Biome == River
 
 	case Watchtower:
 		if tile.Biome == River {

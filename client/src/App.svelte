@@ -8,6 +8,7 @@
         GameState,
         RoomIdentity,
         RoomState,
+        ScoresByPlayer,
         ServerMessage,
     } from "./lib/types";
     import { guestLogin, getMe } from "./lib/api";
@@ -29,6 +30,7 @@
     let game: GameState | null = null;
     let buildCosts: BuildCostsByPlayer = {};
     let events: GameEvent[] = [];
+    let scores: ScoresByPlayer = {};
 
     $: inRoom = roomId.length > 0;
     $: inLobby = inRoom && roomState?.status === "lobby";
@@ -156,6 +158,7 @@
                 events = msg.data.events ?? [];
                 loading = false;
                 error = "";
+                scores = msg.data.scores ?? {};
                 break;
 
             case "state":
@@ -165,6 +168,7 @@
                 events = [];
                 loading = false;
                 error = "";
+                scores = {};
                 break;
 
             case "room_waiting":
@@ -285,6 +289,7 @@
         {role}
         {error}
         {buildCosts}
+        {scores}
         {events}
         onPick={(marketIndex) => socket?.send("pick", { marketIndex })}
         onPlaceTile={(handIndex, x, y) =>

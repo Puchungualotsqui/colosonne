@@ -169,10 +169,7 @@ export function canUseDraftOnTile(
 
     switch (item.Structure) {
       case Structure.Bridge:
-        return (
-          tile.Biome === Biome.River &&
-          hasAdjacentControlledTile(game, tile.X, tile.Y, playerId)
-        );
+        return tile.Biome === Biome.River;
 
       case Structure.Watchtower:
         return (

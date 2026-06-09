@@ -15,7 +15,7 @@ func (gs *GameState) VictoryPoints(playerId PlayerId) uint {
 	for i := range gs.Map {
 		tile := &gs.Map[i]
 
-		if tile.HasOwner && tile.Owner == playerId {
+		if tile.HasOwner && tile.Owner == playerId && !gs.isUnbridgedRiver(tile) {
 			points += 1
 		}
 
@@ -38,7 +38,7 @@ func (gs *GameState) VictoryPoints(playerId PlayerId) uint {
 }
 
 func (gs *GameState) IsGameOver() bool {
-	if len(gs.Deck) > 0 || len(gs.Market) > 0 {
+	if len(gs.Deck) > 0 || gs.CountCardsInMarket() > 0 {
 		return false
 	}
 

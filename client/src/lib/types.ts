@@ -170,8 +170,7 @@ export type RoomState = {
   game: GameState | null;
 
   buildCosts?: BuildCostsByPlayer;
-
-  // Transient backend events used for animation.
+  scores?: ScoresByPlayer;
   events?: GameEvent[];
 };
 
@@ -236,3 +235,5 @@ export type GameEvent = {
   structure?: Structure;
   action?: Action;
 };
+
+export type ScoresByPlayer = Record<string, number>;

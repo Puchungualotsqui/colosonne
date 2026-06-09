@@ -58,7 +58,7 @@
         position: fixed;
         left: 0;
         top: 0;
-        animation: resource-flight 820ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        animation: resource-flight 1550ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
         filter: drop-shadow(0 10px 12px rgba(0, 0, 0, 0.28));
         will-change: transform, opacity;
     }
