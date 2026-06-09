@@ -122,17 +122,12 @@
     $: renderHexes = buildRenderHexes(game.Map, placementShell, canPlaceTile);
     $: boardSize = calculateBoardSize(renderHexes);
 
-    let targetIntent: TargetIntent = { kind: "none" };
-
-    $: targetIntent = getTargetIntent();
-
     $: debugLog("board.targeting.state", {
         isMyTurn,
         currentPhase: game.CurrentPhase,
         selectedBuildAction,
         selectedHandIndex,
         selectedHandItem,
-        targetIntent,
     });
 
     function key(x: number, y: number) {
@@ -158,34 +153,44 @@
     }
 
     function getHexTargetStatus(hex: RenderHex): HexTargetStatus {
-        const intent = targetIntent;
-
-        if (intent.kind === "none") {
+        if (canPlaceTile) {
             return {
-                clickable: false,
+                clickable: hex.candidate && !hex.tile && !hex.ghost,
                 dimmed: false,
             };
         }
 
-        if (intent.kind === "placeTile") {
+        if (canUseDraft && selectedHandItem && hex.tile) {
+            const valid = canUseDraftOnTile(
+                game,
+                playerId,
+                selectedHandItem,
+                hex.tile,
+            );
+
             return {
-                clickable: hex.candidate,
-                dimmed: false,
+                clickable: valid,
+                dimmed: !valid,
             };
         }
 
-        if (!hex.tile) {
+        if (canBuild && selectedBuildAction && hex.tile) {
+            const valid = canBuildOnTile(
+                game,
+                playerId,
+                selectedBuildAction,
+                hex.tile,
+            );
+
             return {
-                clickable: false,
-                dimmed: false,
+                clickable: valid,
+                dimmed: !valid,
             };
         }
-
-        const valid = isValidTargetForIntent(intent, hex.tile);
 
         return {
-            clickable: valid,
-            dimmed: !valid,
+            clickable: false,
+            dimmed: false,
         };
     }
 
@@ -554,21 +559,26 @@
 
     function handleHexSelect(hex: RenderHex) {
         const status = getHexTargetStatus(hex);
+        const intent = getTargetIntent();
 
         debugLog("board.hex.select", {
             x: hex.x,
             y: hex.y,
             hasTile: !!hex.tile,
             candidate: hex.candidate,
+            ghost: hex.ghost,
             role,
             playerId,
             currentPlayer: game.CurrentPlayer,
             currentPhase: game.CurrentPhase,
             isMyTurn,
+            canPlaceTile,
+            canUseDraft,
+            canBuild,
             selectedBuildAction,
             selectedHandIndex,
             selectedHandItem,
-            targetIntent,
+            freshIntent: intent,
             clickable: status.clickable,
             dimmed: status.dimmed,
             tile: hex.tile,
@@ -576,20 +586,20 @@
 
         if (!status.clickable) return;
 
-        switch (targetIntent.kind) {
+        switch (intent.kind) {
             case "placeTile":
                 if (!hex.candidate) return;
-                onPlaceTile(targetIntent.handIndex, hex.x, hex.y);
+                onPlaceTile(intent.handIndex, hex.x, hex.y);
                 return;
 
             case "draft":
                 if (!hex.tile) return;
-                onUseDraft(targetIntent.handIndex, hex.tile.X, hex.tile.Y);
+                onUseDraft(intent.handIndex, hex.tile.X, hex.tile.Y);
                 return;
 
             case "build":
                 if (!hex.tile) return;
-                onBuild(targetIntent.action, hex.tile.X, hex.tile.Y);
+                onBuild(intent.action, hex.tile.X, hex.tile.Y);
                 return;
 
             case "none":
