@@ -79,6 +79,8 @@
     let previousResourcesByPlayer = new Map<number, string>();
     let gainedResourcesByPlayer = new Map<number, Map<number, number>>();
 
+    let tileEffects: Record<string, { effect: string; owner: number }> = {};
+
     type Point = {
         x: number;
         y: number;
@@ -260,9 +262,43 @@
                 enqueueResourceTransfer(event);
                 return;
 
+            case "influence_added":
+                enqueueInfluenceAdded(event);
+                return;
+
             default:
                 return;
         }
+    }
+
+    function enqueueInfluenceAdded(event: GameEvent) {
+        if (!event.to || !event.actor) return;
+
+        pulseTileEffect(event.to.x, event.to.y, "reinforce", event.actor);
+    }
+
+    function tileEffectKey(x: number, y: number) {
+        return `${x},${y}`;
+    }
+
+    function pulseTileEffect(
+        x: number,
+        y: number,
+        effect: string,
+        owner: number,
+    ) {
+        const key = tileEffectKey(x, y);
+
+        tileEffects = {
+            ...tileEffects,
+            [key]: { effect, owner },
+        };
+
+        window.setTimeout(() => {
+            const next = { ...tileEffects };
+            delete next[key];
+            tileEffects = next;
+        }, 1300);
     }
 
     function enqueueResourceGain(event: GameEvent) {
@@ -868,6 +904,7 @@
                 {selectedBuildAction}
                 {selectedHandIndex}
                 {selectedHandItem}
+                {tileEffects}
                 {onPlaceTile}
                 {onUseDraft}
                 onBuild={handleBuild}

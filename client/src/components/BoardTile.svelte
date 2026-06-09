@@ -44,6 +44,9 @@
     export let onStructureHover: () => void = () => {};
     export let onStructureLeave: () => void = () => {};
 
+    export let effect = "";
+    export let effectOwner = 0;
+
     const dispatch = createEventDispatcher<{
         select: void;
     }>();
@@ -183,6 +186,9 @@
         dimmed ? "tile-dimmed" : "",
         influencePreviewed
             ? `structure-preview ${previewClass(influencePreviewOwner)}`
+            : "",
+        effect === "reinforce"
+            ? `tile-reinforce tile-reinforce-p${effectOwner}`
             : "",
     ].join(" ")}
     style={`left: ${left}px; top: ${top}px; width: ${width}px; height: ${height}px;`}
@@ -381,5 +387,59 @@
         background: rgba(185, 75, 63, 0.2);
         border-color: rgba(185, 75, 63, 0.95);
         filter: drop-shadow(0 0 7px rgba(185, 75, 63, 0.32));
+    }
+
+    .board-tile.tile-reinforce::after {
+        content: "";
+        position: absolute;
+        inset: 7px;
+        z-index: 30;
+        pointer-events: none;
+        clip-path: polygon(
+            50% 0%,
+            93.3% 25%,
+            93.3% 75%,
+            50% 100%,
+            6.7% 75%,
+            6.7% 25%
+        );
+        border: 5px solid rgba(248, 239, 224, 0.95);
+        background: rgba(248, 239, 224, 0.16);
+        animation: reinforce-pulse 1250ms ease-out forwards;
+    }
+
+    .board-tile.tile-reinforce-p1::after {
+        border-color: rgba(29, 78, 137, 0.95);
+        background: rgba(29, 78, 137, 0.18);
+    }
+
+    .board-tile.tile-reinforce-p2::after {
+        border-color: rgba(185, 75, 63, 0.95);
+        background: rgba(185, 75, 63, 0.18);
+    }
+
+    @keyframes reinforce-pulse {
+        0% {
+            opacity: 0;
+            transform: scale(0.72);
+            filter: drop-shadow(0 0 0 rgba(248, 239, 224, 0));
+        }
+
+        18% {
+            opacity: 1;
+            transform: scale(1.02);
+            filter: drop-shadow(0 0 12px rgba(248, 239, 224, 0.55));
+        }
+
+        58% {
+            opacity: 0.92;
+            transform: scale(1.14);
+        }
+
+        100% {
+            opacity: 0;
+            transform: scale(1.32);
+            filter: drop-shadow(0 0 0 rgba(248, 239, 224, 0));
+        }
     }
 </style>

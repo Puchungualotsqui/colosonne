@@ -53,6 +53,9 @@
         y: number,
     ) => void;
 
+    export let tileEffects: Record<string, { effect: string; owner: number }> =
+        {};
+
     type InfluenceTooltipRow = {
         playerId: number;
         influence: number;
@@ -1080,6 +1083,8 @@
                         structureLabel={hex.tile
                             ? structureLabel(hex.tile.Structure)
                             : ""}
+                        effect={tileEffects[hex.key]?.effect ?? ""}
+                        effectOwner={tileEffects[hex.key]?.owner ?? 0}
                         tooltip={tileTooltip(hex.tile, hex.candidate)}
                         tooltipTitle={tileTooltipTitle(hex.tile, hex.candidate)}
                         tooltipSubtitle={tileTooltipSubtitle(
