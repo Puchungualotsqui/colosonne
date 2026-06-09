@@ -1,15 +1,18 @@
 <script lang="ts">
     import ResourceIcon from "./ResourceIcon.svelte";
-    import CostBadge from "./CostBadge.svelte";
     import Board from "./Board.svelte";
     import Market from "./Market.svelte";
     import HandCard from "./HandCard.svelte";
     import MiniHandCard from "./MiniHandCard.svelte";
     import CardTooltip from "./CardTooltip.svelte";
-    import BuildActionTooltip from "./BuildActionTooltip.svelte";
+    import BuildButton from "./BuildButton.svelte";
+    import { canUseHandItem, hasBuildTarget } from "../lib/rules";
+    import AppShell from "./ui/AppShell.svelte";
+    import AppHeader from "./ui/AppHeader.svelte";
+    import Panel from "./ui/Panel.svelte";
+    import { ui } from "../lib/uiClasses";
     import {
         Action,
-        Biome,
         DraftKind,
         GamePhase,
         Structure,
@@ -94,7 +97,7 @@
         }
     }
 
-    $: selectedHandIsUsable = canUseHandLocally(selectedHandItem);
+    $: selectedHandIsUsable = canUseHandItem(game, playerId, selectedHandItem);
     $: canDiscardSelected =
         isMyTurn &&
         game.CurrentPhase === GamePhase.Place &&
@@ -143,17 +146,11 @@
     $: canAffordBlockade = canPay(me, blockadeCost);
     $: canAffordFloodworks = canPay(me, floodworksCost);
 
-    $: hasOutpostTarget = game.Map.some((tile) =>
-        isBuildTarget("outpost", tile),
-    );
-    $: hasCityTarget = game.Map.some((tile) => isBuildTarget("city", tile));
-    $: hasSettlementTarget = game.Map.some((tile) =>
-        isBuildTarget("settlement", tile),
-    );
-    $: hasBlockadeTarget = game.Map.some((tile) =>
-        isBuildTarget("blockade", tile),
-    );
-    $: hasFloodTarget = game.Map.some((tile) => isBuildTarget("flood", tile));
+    $: hasOutpostTarget = hasBuildTarget(game, playerId, "outpost");
+    $: hasCityTarget = hasBuildTarget(game, playerId, "city");
+    $: hasSettlementTarget = hasBuildTarget(game, playerId, "settlement");
+    $: hasBlockadeTarget = hasBuildTarget(game, playerId, "blockade");
+    $: hasFloodTarget = hasBuildTarget(game, playerId, "flood");
 
     $: canSelectOutpost = canAffordOutpost && hasOutpostTarget;
     $: canSelectCity = canAffordCity && hasCityTarget;
@@ -185,6 +182,10 @@
 
     function resourceAmount(player: Player | undefined, resourceId: number) {
         return player?.Resources?.[resourceId] ?? 0;
+    }
+
+    function handleInstantBuild(action: BuildAction) {
+        onBuild(action, 0, 0);
     }
 
     function resourceKey(player: Player) {
@@ -303,229 +304,18 @@
     }
 
     function firstUsableHandIndex() {
-        const usableIndex = myHand.findIndex((item) => canUseHandLocally(item));
+        const usableIndex = myHand.findIndex((item) =>
+            canUseHandItem(game, playerId, item),
+        );
+
         if (usableIndex >= 0) return usableIndex;
         return myHand.length > 0 ? 0 : -1;
-    }
-
-    function biomeName(biome: Biome) {
-        switch (biome) {
-            case Biome.Forest:
-                return "Forest";
-            case Biome.Mountain:
-                return "Mountain";
-            case Biome.Plain:
-                return "Plain";
-            case Biome.River:
-                return "River";
-            case Biome.Ruins:
-                return "Ruins";
-            default:
-                return "Unknown";
-        }
-    }
-
-    function structureName(structure: Structure) {
-        switch (structure) {
-            case Structure.Bridge:
-                return "Bridge";
-            case Structure.Watchtower:
-                return "Watchtower";
-            case Structure.Outpost:
-                return "Outpost";
-            case Structure.City:
-                return "City";
-            case Structure.Settlement:
-                return "Settlement";
-            default:
-                return "Structure";
-        }
-    }
-
-    function actionName(action: Action) {
-        switch (action) {
-            case Action.Harvest:
-                return "Harvest";
-            case Action.Reinforce:
-                return "Reinforce";
-            case Action.Expansion:
-                return "Expansion";
-            case Action.Raid:
-                return "Raid";
-            default:
-                return "Action";
-        }
-    }
-
-    function draftName(item: DraftItem | null | undefined) {
-        if (!item) return "Empty";
-
-        switch (item.Kind) {
-            case DraftKind.Tile:
-                return `${biomeName(item.Biome)} Tile`;
-            case DraftKind.Structure:
-                return structureName(item.Structure);
-            case DraftKind.Action:
-                return actionName(item.Action);
-            default:
-                return "Unknown";
-        }
     }
 
     function playerColor(targetPlayerId: number) {
         if (targetPlayerId === 1) return "bg-[#1d4e89]";
         if (targetPlayerId === 2) return "bg-[#b94b3f]";
         return "bg-[#6b4a2f]";
-    }
-
-    function hexNeighbors(x: number, y: number) {
-        return [
-            { x: x + 1, y },
-            { x: x + 1, y: y - 1 },
-            { x, y: y - 1 },
-            { x: x - 1, y },
-            { x: x - 1, y: y + 1 },
-            { x, y: y + 1 },
-        ];
-    }
-
-    function tileAt(x: number, y: number) {
-        return game.Map.find((t) => t.X === x && t.Y === y);
-    }
-
-    function controlsTile(
-        tile: { HasOwner: boolean; Owner: number } | undefined,
-    ) {
-        return !!tile && tile.HasOwner && tile.Owner === playerId;
-    }
-
-    function hasAdjacentControlledTile(x: number, y: number) {
-        return hexNeighbors(x, y).some((n) => controlsTile(tileAt(n.x, n.y)));
-    }
-
-    function isEnemyControlledTile(tile: any) {
-        return !!tile && tile.HasOwner && tile.Owner !== playerId;
-    }
-
-    function isUnownedTile(tile: any) {
-        return !!tile && !tile.HasOwner;
-    }
-
-    function canBuildBlockadeOnTile(tile: any) {
-        if (!tile) return false;
-
-        if (tile.Biome === Biome.River) return false;
-        if (tile.HasBlockade) return false;
-        if (controlsTile(tile)) return false;
-
-        if (isEnemyControlledTile(tile)) return true;
-
-        if (isUnownedTile(tile)) {
-            return hasAdjacentControlledTile(tile.X, tile.Y);
-        }
-
-        return false;
-    }
-
-    function canUseHandLocally(item: DraftItem | null | undefined) {
-        if (!item) return false;
-
-        switch (item.Kind) {
-            case DraftKind.Tile:
-                return game.Map.some((tile) =>
-                    hexNeighbors(tile.X, tile.Y).some((n) => !tileAt(n.x, n.y)),
-                );
-
-            case DraftKind.Structure:
-                return game.Map.some((tile) =>
-                    canUseStructureOnTileLocally(item.Structure, tile),
-                );
-
-            case DraftKind.Action:
-                if (item.Action === Action.Expansion) return true;
-                if (item.Action === Action.Raid)
-                    return game.Players.some((p) => p.Id !== playerId);
-
-                if (item.Action === Action.Reinforce)
-                    return game.Map.length > 0;
-
-                if (item.Action === Action.Harvest) {
-                    return game.Map.some(
-                        (tile) =>
-                            controlsTile(tile) && tile.Biome !== Biome.River,
-                    );
-                }
-
-                return false;
-
-            default:
-                return false;
-        }
-    }
-
-    function canUseStructureOnTileLocally(structure: Structure, tile: any) {
-        if (!tile) return false;
-        if (tile.Structure !== Structure.None) return false;
-
-        switch (structure) {
-            case Structure.Bridge:
-                return (
-                    tile.Biome === Biome.River &&
-                    tile.Structure === Structure.None
-                );
-
-            case Structure.Watchtower:
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None &&
-                    !isEnemyControlledTile(tile)
-                );
-
-            case Structure.Outpost:
-            case Structure.City:
-            case Structure.Settlement:
-                return false;
-
-            default:
-                return false;
-        }
-    }
-
-    function isBuildTarget(action: TargetBuildAction, tile: any) {
-        if (!tile) return false;
-
-        switch (action) {
-            case "outpost":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None
-                );
-
-            case "settlement":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None &&
-                    controlsTile(tile)
-                );
-
-            case "blockade":
-                return canBuildBlockadeOnTile(tile);
-
-            case "city":
-                return (
-                    tile.Structure === Structure.Outpost &&
-                    tile.StructureOwner === playerId
-                );
-
-            case "flood":
-                return (
-                    tile.Biome !== Biome.River &&
-                    tile.Structure === Structure.None
-                );
-
-            default:
-                return false;
-        }
     }
 
     function handleBuild(action: TargetBuildAction, x: number, y: number) {
@@ -552,6 +342,28 @@
         selectedBuildAction = null;
     }
 
+    function selectedBuildHint(action: TargetBuildAction) {
+        switch (action) {
+            case "city":
+                return "Click your outpost to upgrade it";
+
+            case "settlement":
+                return "Click friendly empty land";
+
+            case "blockade":
+                return "Click enemy land or adjacent neutral land";
+
+            case "flood":
+                return "Click a tile without structure";
+
+            case "outpost":
+                return "Click neutral or friendly empty land";
+
+            default:
+                return "Click a valid target";
+        }
+    }
+
     function selectBuildAction(action: TargetBuildAction) {
         selectedBuildAction = selectedBuildAction === action ? null : action;
 
@@ -572,44 +384,11 @@
     }
 </script>
 
-<main
-    class="relative min-h-screen overflow-hidden bg-[#17313a] font-sans text-[#f8efe0]"
->
-    <div class="pointer-events-none absolute inset-0 bg-[#15323a]">
-        <div class="absolute inset-0 bg-board-flat"></div>
-        <div class="absolute inset-0 bg-board-texture opacity-[0.16]"></div>
-        <div
-            class="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/18 to-transparent"
-        ></div>
-    </div>
-
-    <header
-        class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-12"
-    >
-        <div class="flex items-center gap-3">
-            <div
-                class="grid h-11 w-11 place-items-center rounded-2xl bg-[#f2c36b] text-xl font-black text-[#142833] shadow-[0_8px_0_rgba(0,0,0,0.16)] ring-1 ring-white/20"
-            >
-                <span class="logo-diamond">◈</span>
-            </div>
-
-            <div>
-                <div
-                    class="text-xl font-semibold tracking-tight text-[#fff7e8]"
-                >
-                    Frontiers
-                </div>
-                <div
-                    class="text-xs font-semibold uppercase tracking-[0.22em] text-[#9fc9c5]"
-                >
-                    Room {roomId}
-                </div>
-            </div>
-        </div>
-
-        <div class="flex items-center gap-3">
+<AppShell>
+    <AppHeader subtitle={`Room ${roomId}`}>
+        <svelte:fragment slot="actions">
             <button
-                class="cursor-pointer rounded-xl bg-[#f8efe0]/10 px-3 py-2 text-sm font-bold text-[#fff7e8] ring-1 ring-[#f8efe0]/20 hover:bg-[#f8efe0]/16"
+                class={ui.button.smallSecondary}
                 type="button"
                 on:click={onCopyRoomCode}
             >
@@ -617,14 +396,14 @@
             </button>
 
             <button
-                class="cursor-pointer rounded-xl bg-[#b94b3f] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#c9574a]"
+                class={ui.button.danger}
                 type="button"
                 on:click={onLeaveRoom}
             >
                 Leave
             </button>
-        </div>
-    </header>
+        </svelte:fragment>
+    </AppHeader>
 
     <section
         class="relative z-10 mx-auto grid w-full max-w-[1640px] gap-5 px-4 pb-10 pt-3 lg:grid-cols-[310px_minmax(0,1fr)_350px] lg:px-6 xl:grid-cols-[330px_minmax(0,1fr)_360px]"
@@ -632,9 +411,7 @@
         <aside
             class="min-w-0 space-y-5 lg:max-h-[calc(100vh-112px)] lg:overflow-y-auto lg:pr-1"
         >
-            <section
-                class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-            >
+            <Panel>
                 <div
                     class="text-sm font-black uppercase tracking-[0.22em] text-[#9fc9c5]"
                 >
@@ -686,11 +463,9 @@
                         </div>
                     </div>
                 </div>
-            </section>
+            </Panel>
 
-            <section
-                class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-            >
+            <Panel>
                 <h2 class="text-xl font-black text-[#fff7e8]">Players</h2>
 
                 <div class="mt-4 space-y-3">
@@ -777,7 +552,7 @@
                         </div>
                     {/each}
                 </div>
-            </section>
+            </Panel>
         </aside>
 
         <div class="min-h-0 min-w-0 lg:sticky lg:top-24 lg:self-start">
@@ -848,9 +623,7 @@
             {/if}
 
             {#if isMyTurn && game.CurrentPhase === GamePhase.Place}
-                <section
-                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-                >
+                <Panel>
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="text-xl font-black text-[#fff7e8]">Hand</h2>
 
@@ -931,13 +704,11 @@
                             Continue
                         </button>
                     {/if}
-                </section>
+                </Panel>
             {/if}
 
             {#if isMyTurn && game.CurrentPhase === GamePhase.Build}
-                <section
-                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-                >
+                <Panel>
                     <div class="flex items-center justify-between gap-3">
                         <h2 class="text-xl font-black text-[#fff7e8]">Build</h2>
 
@@ -952,21 +723,26 @@
                         <div
                             class="mt-4 rounded-2xl bg-[#f2c36b]/20 p-3 text-center text-sm font-black text-[#f8efe0] ring-1 ring-[#f2c36b]/40"
                         >
-                            {selectedBuildAction === "city"
-                                ? "Click your outpost to upgrade it"
-                                : selectedBuildAction === "settlement"
-                                  ? "Click friendly empty land"
-                                  : selectedBuildAction === "blockade"
-                                    ? "Click enemy land or adjacent neutral land"
-                                    : selectedBuildAction === "flood"
-                                      ? "Click a tile without structure"
-                                      : "Click a valid land tile"}
+                            {selectedBuildHint(selectedBuildAction)}
                         </div>
                     {/if}
 
                     <div class="mt-4 grid grid-cols-2 gap-3">
-                        <BuildActionTooltip
+                        <BuildButton
                             action="outpost"
+                            label="Outpost"
+                            icon="⌂"
+                            cost={outpostCost}
+                            affordable={canAffordOutpost}
+                            enabled={canSelectOutpost}
+                            selected={selectedBuildAction === "outpost"}
+                            title={costTitle(
+                                outpostCost,
+                                canAffordOutpost,
+                                hasOutpostTarget
+                                    ? "Build Outpost"
+                                    : "No valid target",
+                            )}
                             hint={costTitle(
                                 outpostCost,
                                 canAffordOutpost,
@@ -974,48 +750,24 @@
                                     ? "Build Outpost"
                                     : "No valid target",
                             )}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    selectedBuildAction === "outpost"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                    canSelectOutpost
-                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                        : "cursor-not-allowed opacity-45",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canSelectOutpost}
-                                title={costTitle(
-                                    outpostCost,
-                                    canAffordOutpost,
-                                    hasOutpostTarget
-                                        ? "Build Outpost"
-                                        : "No valid target",
-                                )}
-                                on:click={() => selectBuildAction("outpost")}
-                            >
-                                <div class="text-3xl">⌂</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Outpost
-                                </div>
-                                <div class="mt-2">
-                                    <CostBadge
-                                        wood={outpostCost.wood ?? 0}
-                                        stone={outpostCost.stone ?? 0}
-                                        grain={outpostCost.grain ?? 0}
-                                        relic={outpostCost.relic ?? 0}
-                                        affordable={canAffordOutpost}
-                                    />
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            onSelect={selectBuildAction}
+                        />
 
-                        <BuildActionTooltip
+                        <BuildButton
                             action="settlement"
+                            label="Settlement"
+                            icon="◈"
+                            cost={settlementCost}
+                            affordable={canAffordSettlement}
+                            enabled={canSelectSettlement}
+                            selected={selectedBuildAction === "settlement"}
+                            title={costTitle(
+                                settlementCost,
+                                canAffordSettlement,
+                                hasSettlementTarget
+                                    ? "Build Settlement"
+                                    : "Needs friendly empty land",
+                            )}
                             hint={costTitle(
                                 settlementCost,
                                 canAffordSettlement,
@@ -1023,48 +775,24 @@
                                     ? "Build Settlement"
                                     : "Needs friendly empty land",
                             )}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    selectedBuildAction === "settlement"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                    canSelectSettlement
-                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                        : "cursor-not-allowed opacity-45",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canSelectSettlement}
-                                title={costTitle(
-                                    settlementCost,
-                                    canAffordSettlement,
-                                    hasSettlementTarget
-                                        ? "Build Settlement"
-                                        : "Needs friendly empty land",
-                                )}
-                                on:click={() => selectBuildAction("settlement")}
-                            >
-                                <div class="text-3xl">◈</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Settlement
-                                </div>
-                                <div class="mt-2">
-                                    <CostBadge
-                                        wood={settlementCost.wood ?? 0}
-                                        stone={settlementCost.stone ?? 0}
-                                        grain={settlementCost.grain ?? 0}
-                                        relic={settlementCost.relic ?? 0}
-                                        affordable={canAffordSettlement}
-                                    />
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            onSelect={selectBuildAction}
+                        />
 
-                        <BuildActionTooltip
+                        <BuildButton
                             action="city"
+                            label="City"
+                            icon="▦"
+                            cost={cityCost}
+                            affordable={canAffordCity}
+                            enabled={canSelectCity}
+                            selected={selectedBuildAction === "city"}
+                            title={costTitle(
+                                cityCost,
+                                canAffordCity,
+                                hasCityTarget
+                                    ? "Upgrade Outpost to City"
+                                    : "Requires your outpost",
+                            )}
                             hint={costTitle(
                                 cityCost,
                                 canAffordCity,
@@ -1072,48 +800,24 @@
                                     ? "Upgrade Outpost to City"
                                     : "Requires your outpost",
                             )}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    selectedBuildAction === "city"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                    canSelectCity
-                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                        : "cursor-not-allowed opacity-45",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canSelectCity}
-                                title={costTitle(
-                                    cityCost,
-                                    canAffordCity,
-                                    hasCityTarget
-                                        ? "Upgrade Outpost to City"
-                                        : "Requires your outpost",
-                                )}
-                                on:click={() => selectBuildAction("city")}
-                            >
-                                <div class="text-3xl">▦</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    City
-                                </div>
-                                <div class="mt-2">
-                                    <CostBadge
-                                        wood={cityCost.wood ?? 0}
-                                        stone={cityCost.stone ?? 0}
-                                        grain={cityCost.grain ?? 0}
-                                        relic={cityCost.relic ?? 0}
-                                        affordable={canAffordCity}
-                                    />
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            onSelect={selectBuildAction}
+                        />
 
-                        <BuildActionTooltip
+                        <BuildButton
                             action="blockade"
+                            label="Blockade"
+                            icon="✕"
+                            cost={blockadeCost}
+                            affordable={canAffordBlockade}
+                            enabled={canSelectBlockade}
+                            selected={selectedBuildAction === "blockade"}
+                            title={costTitle(
+                                blockadeCost,
+                                canAffordBlockade,
+                                hasBlockadeTarget
+                                    ? "Build Blockade"
+                                    : "No valid blockade target",
+                            )}
                             hint={costTitle(
                                 blockadeCost,
                                 canAffordBlockade,
@@ -1121,124 +825,47 @@
                                     ? "Build Blockade"
                                     : "No valid blockade target",
                             )}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    selectedBuildAction === "blockade"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                    canSelectBlockade
-                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                        : "cursor-not-allowed opacity-45",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canSelectBlockade}
-                                title={costTitle(
-                                    blockadeCost,
-                                    canAffordBlockade,
-                                    hasBlockadeTarget
-                                        ? "Build Blockade"
-                                        : "No valid blockade target",
-                                )}
-                                on:click={() => selectBuildAction("blockade")}
-                            >
-                                <div class="text-3xl">✕</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Blockade
-                                </div>
-                                <div class="mt-2">
-                                    <CostBadge
-                                        wood={blockadeCost.wood ?? 0}
-                                        stone={blockadeCost.stone ?? 0}
-                                        grain={blockadeCost.grain ?? 0}
-                                        relic={blockadeCost.relic ?? 0}
-                                        affordable={canAffordBlockade}
-                                    />
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            onSelect={selectBuildAction}
+                        />
                     </div>
 
                     <div class="mt-3 grid grid-cols-2 gap-3">
-                        <BuildActionTooltip
+                        <BuildButton
                             action="floodworks"
+                            label="Floodworks"
+                            icon="≈"
+                            cost={floodworksCost}
+                            affordable={canAffordFloodworks}
+                            enabled={canBuyFloodworks}
+                            variant="water"
+                            title={costTitle(
+                                floodworksCost,
+                                canAffordFloodworks,
+                                "Buy 3 flood tokens",
+                            )}
                             hint={costTitle(
                                 floodworksCost,
                                 canAffordFloodworks,
                                 "Buy 3 flood tokens",
                             )}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    canBuyFloodworks
-                                        ? "cursor-pointer bg-[#6eb8c5] text-[#102b38] hover:bg-[#85d8d1]"
-                                        : "cursor-not-allowed bg-[#f8efe0]/10 text-[#fff7e8] opacity-45 ring-1 ring-[#f8efe0]/20",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canBuyFloodworks}
-                                title={costTitle(
-                                    floodworksCost,
-                                    canAffordFloodworks,
-                                    "Buy 3 flood tokens",
-                                )}
-                                on:click={() => onBuild("floodworks", 0, 0)}
-                            >
-                                <div class="text-3xl">≈</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Floodworks
-                                </div>
-                                <div class="mt-2">
-                                    <CostBadge
-                                        wood={floodworksCost.wood ?? 0}
-                                        stone={floodworksCost.stone ?? 0}
-                                        grain={floodworksCost.grain ?? 0}
-                                        relic={floodworksCost.relic ?? 0}
-                                        affordable={canAffordFloodworks}
-                                    />
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            onInstant={handleInstantBuild}
+                        />
 
-                        <BuildActionTooltip
+                        <BuildButton
                             action="flood"
+                            label="Flood"
+                            icon="≈"
+                            enabled={canUseFloodToken}
+                            selected={selectedBuildAction === "flood"}
+                            title={canUseFloodToken
+                                ? "Convert one tile to river"
+                                : "Need flood token and valid target"}
                             hint={canUseFloodToken
                                 ? "Convert one tile to river"
                                 : "Need flood token and valid target"}
-                        >
-                            <button
-                                class={[
-                                    "h-full w-full rounded-2xl p-4 text-center font-black shadow-[0_6px_0_rgba(0,0,0,0.18)] transition active:translate-y-1",
-                                    selectedBuildAction === "flood"
-                                        ? "bg-[#f2c36b] text-[#142833]"
-                                        : "bg-[#f8efe0]/10 text-[#fff7e8] ring-1 ring-[#f8efe0]/20",
-                                    canUseFloodToken
-                                        ? "cursor-pointer hover:bg-[#f8efe0]/16"
-                                        : "cursor-not-allowed opacity-45",
-                                ].join(" ")}
-                                type="button"
-                                disabled={!canUseFloodToken}
-                                title={canUseFloodToken
-                                    ? "Convert one tile to river"
-                                    : "Need flood token and valid target"}
-                                on:click={() => selectBuildAction("flood")}
-                            >
-                                <div class="text-3xl">≈</div>
-                                <div
-                                    class="mt-1 text-xs uppercase tracking-wider"
-                                >
-                                    Flood
-                                </div>
-                                <div class="mt-2 text-xs font-black">
-                                    Tokens: {me?.FloodTokens ?? 0}
-                                </div>
-                            </button>
-                        </BuildActionTooltip>
+                            tokenText={`Tokens: ${me?.FloodTokens ?? 0}`}
+                            onSelect={selectBuildAction}
+                        />
                     </div>
 
                     <button
@@ -1248,46 +875,25 @@
                     >
                         Pass
                     </button>
-                </section>
+                </Panel>
             {/if}
 
             {#if error}
-                <section
-                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-                >
+                <Panel>
                     <div
                         class="rounded-2xl bg-[#b94b3f] px-5 py-3 text-sm font-semibold text-white"
                     >
                         {error}
                     </div>
-                </section>
+                </Panel>
             {/if}
 
             <Market {game} {playerId} {role} {onPick} />
         </aside>
     </section>
-</main>
+</AppShell>
 
 <style>
-    .logo-diamond {
-        display: block;
-        line-height: 1;
-        transform: translateY(-1px);
-    }
-
-    .bg-board-flat {
-        background: linear-gradient(180deg, #173943 0%, #102832 100%);
-    }
-
-    .bg-board-texture {
-        background-image: radial-gradient(
-            circle,
-            rgba(255, 255, 255, 0.055) 1px,
-            transparent 1px
-        );
-        background-size: 28px 28px;
-    }
-
     .resource-toast {
         animation: toast-pop 720ms ease-out;
     }

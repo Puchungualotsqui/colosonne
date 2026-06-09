@@ -1,4 +1,9 @@
 <script lang="ts">
+    import AppShell from "./ui/AppShell.svelte";
+    import AppHeader from "./ui/AppHeader.svelte";
+    import Panel from "./ui/Panel.svelte";
+    import { ui } from "../lib/uiClasses";
+
     import type { RoomState } from "../lib/types";
 
     export let room: RoomState;
@@ -23,61 +28,25 @@
         isHost && enoughPlayers && allReady && room.status === "lobby";
 </script>
 
-<main
-    class="relative min-h-screen overflow-hidden bg-[#17313a] font-sans text-[#f8efe0]"
->
-    <div class="pointer-events-none absolute inset-0 bg-[#15323a]">
-        <div class="absolute inset-0 bg-board-flat"></div>
-        <div class="absolute inset-0 bg-board-texture opacity-[0.16]"></div>
-        <div class="absolute inset-x-0 top-0 h-px bg-white/10"></div>
-        <div
-            class="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/18 to-transparent"
-        ></div>
-    </div>
-
-    <header
-        class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-12"
-    >
-        <div class="flex items-center gap-3">
-            <div
-                class="grid h-11 w-11 place-items-center rounded-2xl bg-[#f2c36b] text-xl font-black text-[#142833] shadow-[0_8px_0_rgba(0,0,0,0.16)] ring-1 ring-white/20"
+<AppShell>
+    <AppHeader subtitle="Game Lobby">
+        <svelte:fragment slot="actions">
+            <button
+                class={ui.button.danger}
+                type="button"
+                on:click={onLeaveRoom}
             >
-                <span class="logo-diamond">◈</span>
-            </div>
-
-            <div>
-                <div
-                    class="text-xl font-semibold tracking-tight text-[#fff7e8]"
-                >
-                    Frontiers
-                </div>
-                <div
-                    class="text-xs font-semibold uppercase tracking-[0.22em] text-[#9fc9c5]"
-                >
-                    Game Lobby
-                </div>
-            </div>
-        </div>
-
-        <button
-            class="cursor-pointer rounded-xl bg-[#b94b3f] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#c9574a]"
-            type="button"
-            on:click={onLeaveRoom}
-        >
-            Leave Room
-        </button>
-    </header>
+                Leave Room
+            </button>
+        </svelte:fragment>
+    </AppHeader>
 
     <section
         class="relative z-10 mx-auto grid max-w-7xl gap-6 px-6 pb-12 pt-4 lg:grid-cols-[1fr_360px] lg:px-12"
     >
         <div class="space-y-6">
-            <div
-                class="rounded-[34px] bg-[#caa66d] p-4 shadow-[0_18px_0_rgba(44,31,21,0.28)] ring-1 ring-black/20"
-            >
-                <div
-                    class="rounded-[26px] border border-[#6b4a2f]/35 bg-[#ead7aa] p-6 text-[#142833] shadow-inner"
-                >
+            <Panel variant="board" padding="sm">
+                <Panel variant="innerBoard" padding="lg">
                     <div
                         class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between"
                     >
@@ -204,13 +173,11 @@
                             {error}
                         </div>
                     {/if}
-                </div>
-            </div>
+                </Panel>
+            </Panel>
 
             <div class="grid gap-6 lg:grid-cols-2">
-                <section
-                    class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
-                >
+                <Panel>
                     <div class="flex items-center justify-between">
                         <h2 class="text-xl font-black text-[#fff7e8]">
                             Players
@@ -300,7 +267,7 @@
                             </div>
                         {/if}
                     </div>
-                </section>
+                </Panel>
 
                 <section
                     class="rounded-3xl bg-[#23444c] p-5 shadow-md ring-1 ring-[#f8efe0]/10"
@@ -423,25 +390,4 @@
             </section>
         </aside>
     </section>
-</main>
-
-<style>
-    .logo-diamond {
-        display: block;
-        line-height: 1;
-        transform: translateY(-1px);
-    }
-
-    .bg-board-flat {
-        background: linear-gradient(180deg, #173943 0%, #102832 100%);
-    }
-
-    .bg-board-texture {
-        background-image: radial-gradient(
-            circle,
-            rgba(255, 255, 255, 0.055) 1px,
-            transparent 1px
-        );
-        background-size: 28px 28px;
-    }
-</style>
+</AppShell>

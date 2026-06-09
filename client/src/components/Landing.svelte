@@ -9,6 +9,10 @@
 </script>
 
 <script lang="ts">
+    import AppShell from "./ui/AppShell.svelte";
+    import AppHeader from "./ui/AppHeader.svelte";
+    import { ui } from "../lib/uiClasses";
+
     export let user: LandingUser = null;
     export let loading = false;
     export let error = "";
@@ -55,45 +59,9 @@
     }
 </script>
 
-<main
-    class="relative min-h-screen overflow-hidden bg-[#17313a] font-sans text-[#f8efe0]"
->
-    <div class="pointer-events-none absolute inset-0 bg-[#15323a]">
-        <div class="absolute inset-0 bg-board-flat"></div>
-        <div class="absolute inset-0 bg-board-texture opacity-[0.16]"></div>
-
-        <div class="absolute inset-x-0 top-0 h-px bg-white/10"></div>
-
-        <div
-            class="absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t from-black/18 to-transparent"
-        ></div>
-    </div>
-
-    <header
-        class="relative z-10 mx-auto flex max-w-7xl items-center justify-between px-6 py-5 lg:px-12"
-    >
-        <div class="flex items-center gap-3">
-            <div
-                class="grid h-11 w-11 place-items-center rounded-2xl bg-[#f2c36b] text-xl font-black text-[#142833] shadow-[0_8px_0_rgba(0,0,0,0.16)] ring-1 ring-white/20"
-            >
-                <span class="logo-diamond">◈</span>
-            </div>
-
-            <div>
-                <div
-                    class="text-xl font-semibold tracking-tight text-[#fff7e8]"
-                >
-                    Frontiers
-                </div>
-                <div
-                    class="text-xs font-semibold uppercase tracking-[0.22em] text-[#9fc9c5]"
-                >
-                    Influence Strategy
-                </div>
-            </div>
-        </div>
-
-        <div class="flex items-center gap-3">
+<AppShell>
+    <AppHeader subtitle="Influence Strategy">
+        <svelte:fragment slot="actions">
             {#if user && user.authenticated && !user.isGuest}
                 <div
                     class="flex items-center gap-3 rounded-2xl bg-[#f8efe0]/10 px-4 py-2 shadow-sm ring-1 ring-[#f8efe0]/15 backdrop-blur"
@@ -123,7 +91,7 @@
                 </div>
             {:else}
                 <button
-                    class="cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold text-[#f8efe0] transition hover:bg-white/10"
+                    class={ui.button.ghost}
                     type="button"
                     on:click={onLogin}
                 >
@@ -131,15 +99,15 @@
                 </button>
 
                 <button
-                    class="cursor-pointer rounded-xl bg-[#f8efe0] px-4 py-2 text-sm font-bold text-[#142833] shadow-sm transition hover:bg-white"
+                    class={ui.button.cream}
                     type="button"
                     on:click={onSignUp}
                 >
                     Sign up
                 </button>
             {/if}
-        </div>
-    </header>
+        </svelte:fragment>
+    </AppHeader>
 
     <section
         class="relative z-10 mx-auto grid min-h-[calc(100vh-84px)] max-w-7xl grid-cols-1 items-center gap-10 px-6 pb-12 lg:grid-cols-[1.05fr_0.95fr] lg:px-12"
@@ -362,7 +330,7 @@
             </div>
         </div>
     </section>
-</main>
+</AppShell>
 
 <style>
     .clip-hex {
@@ -374,12 +342,6 @@
             6.7% 75%,
             6.7% 25%
         );
-    }
-
-    .logo-diamond {
-        display: block;
-        line-height: 1;
-        transform: translateY(-1px);
     }
 
     .structure {
@@ -556,18 +518,5 @@
         border-right: 4px solid var(--player-dark);
         border-bottom: 4px solid var(--player-dark);
         transform: perspective(20px) rotateX(12deg);
-    }
-
-    .bg-board-flat {
-        background: linear-gradient(180deg, #173943 0%, #102832 100%);
-    }
-
-    .bg-board-texture {
-        background-image: radial-gradient(
-            circle,
-            rgba(255, 255, 255, 0.055) 1px,
-            transparent 1px
-        );
-        background-size: 28px 28px;
     }
 </style>
